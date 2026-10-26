@@ -15,7 +15,7 @@ This is a pioneer project from Maskinrepubliken. Pioneer projects are small prog
 - [Adafruit Mini Color TFT with Joystick FeatherWing](https://www.adafruit.com/product/3321):
   a 160×80 ST7735R screen on SPI, and a seesaw chip on I2C (address `0x5E`) for the joystick, the
   A/B buttons, the backlight and the screen's reset
-- a USB sound card into a stand-alone 12–24 V amplifier board
+- a USB sound card into an XH-M548 amplifier board (TPA3116D2, two channels, 12–24 V)
 - one 12–24 V power supply, split with a DC Y-cable between the amplifier and a 5 V USB-C
   step-down converter that powers the Pi
 - a USB CD drive
