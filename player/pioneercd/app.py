@@ -26,8 +26,9 @@ def clock(seconds):
 
 
 class Settings:
-    DEFAULTS = {"volume": 28, "volume_cap": 60, "brightness": 100, "sleep_minutes": 10}
+    DEFAULTS = {"volume": 28, "volume_cap": 60, "brightness": 100, "sleep_minutes": 10, "bt_boost": 8}
     CHOICES = {
+        "bt_boost": [0, 4, 8, 12],
         "volume_cap": [30, 40, 50, 60, 70, 80, 100],
         "brightness": [10, 30, 50, 70, 100],
         "sleep_minutes": [0, 2, 5, 10, 30, 60],
@@ -75,6 +76,7 @@ class Volume:
     def __init__(self, level):
         self.level = level
         self.muted = False
+        self.boost = 0          # dB on top, for a source that comes in quieter (Bluetooth)
         run = lambda *a: subprocess.run(["amixer", "-q", "-c", self.CARD, *a], capture_output=True)
         run("sset", "Speaker", "100%", "unmute")
         if run("sget", self.CONTROL).returncode:
@@ -87,7 +89,7 @@ class Volume:
         return max(-60.0, 27 * math.log10(level / 100)) if level > 0 else -60.0
 
     def apply(self):
-        db = -60.0 if self.muted else self.db(self.level)
+        db = -60.0 if self.muted else min(0.0, self.db(self.level) + self.boost)
         subprocess.run(["amixer", "-q", "-c", self.CARD, "sset", self.CONTROL, "--", f"{db:.1f}dB"],
                        capture_output=True)
 
@@ -228,9 +230,12 @@ class BluetoothScreen:
             return {"kind": "message", "status": ("BLÅTAND", "SYNLIG"), "title": "Väntar på telefon",
                     "text": "Anslut till Pioneer CD.", "legend": [("◀", "stäng av")]}
         if not st.get("title"):
-            return {"kind": "message", "status": ("BLÅTAND", st["device"].upper()), "title": "Ansluten",
-                    "text": "Spela något på telefonen.", "legend": [("◀", "tillbaka")]}
-        paused = st.get("status") != "playing"
+            playing = st.get("streaming")
+            return {"kind": "message", "status": ("BLÅTAND", st["device"].upper()),
+                    "title": "Spelar" if playing else "Ansluten",
+                    "text": "Telefonen visar inte vad." if playing else "Spela något på telefonen.",
+                    "legend": [("◀", "tillbaka")]}
+        paused = not (st.get("status") == "playing" or st.get("streaming"))
         dur, pos = st.get("duration") or 0, st.get("position") or 0
         return {"kind": "playing", "status": ("BLÅTAND", st["device"].upper()),
                 "title": st["title"], "subtitle": st.get("artist", ""),
@@ -241,7 +246,7 @@ class BluetoothScreen:
     def key(self, app, ev):
         st = app.bt.state if app.bt else {}
         if ev == "center" and st:
-            app.bt_control("Pause" if st.get("status") == "playing" else "Play")
+            app.bt_control("Pause" if st.get("status") == "playing" or st.get("streaming") else "Play")
         elif ev in ("up", "down") and st:
             app.bt_control("Next" if ev == "down" else "Previous")
         elif ev == "left":
@@ -251,7 +256,7 @@ class BluetoothScreen:
 
 class SettingsScreen:
     ROWS = [("volume_cap", "Volymtak", "{}"), ("brightness", "Ljusstyrka", "{} %"),
-            ("sleep_minutes", "Vila efter", "{} min")]
+            ("sleep_minutes", "Vila efter", "{} min"), ("bt_boost", "Blåtand-nivå", "+{} dB")]
 
     def __init__(self):
         self.sel = 0
@@ -313,7 +318,7 @@ class App:
         rows = [{"label": "CD", "id": "cd"}, {"label": "Bibliotek", "id": "jellyfin"},
                 {"label": "Radio", "id": "radio"}, {"label": "Blåtand", "id": "bluetooth"},
                 {"label": "Inställningar", "id": "settings"}]
-        if self.bt and self.bt.state.get("status") == "playing":
+        if self.bt_playing():
             rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
         elif self.playing and not self.mpv.props.get("idle-active"):
             rows.insert(0, {"label": "Spelas nu", "id": "playing",
@@ -333,7 +338,7 @@ class App:
     def pick_source(self, app, row):
         kind = row["id"]
         if kind == "playing":
-            if self.bt and self.bt.state.get("status") == "playing":
+            if self.bt_playing():
                 self.push(BluetoothScreen(self))
             else:
                 self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
@@ -474,8 +479,12 @@ class App:
         except Exception as e:
             print("bluetooth:", repr(e), flush=True)
 
+    def bt_playing(self):
+        st = self.bt.state if self.bt else {}
+        return st.get("status") == "playing" or bool(st.get("streaming"))
+
     def pause_phone(self):
-        if self.bt and self.bt.state.get("status") == "playing":
+        if self.bt_playing():
             self.bt_control("Pause")
 
     def poll_bt(self, now):
@@ -487,8 +496,13 @@ class App:
         except Exception as e:
             print("bluetooth:", repr(e), flush=True)
             return
-        if st.get("status") == "playing" and not self.mpv.props.get("idle-active"):
+        playing = self.bt_playing()
+        if playing and not self.mpv.props.get("idle-active"):
             self.mpv.stop()
+        boost = self.settings["bt_boost"] if playing else 0
+        if boost != self.volume.boost:
+            self.volume.boost = boost
+            self.volume.apply()
 
     # buttons, settings, the clock
     def apply_settings(self):

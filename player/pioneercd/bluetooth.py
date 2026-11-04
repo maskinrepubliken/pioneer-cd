@@ -53,8 +53,17 @@ class Bluetooth:
                                  duration=int(track.get("Duration", 0)) / 1000,
                                  position=int(player.get("Position", 0)) / 1000)
             break
+        if state:
+            state["streaming"] = self._streaming()
         self.state = state
         return state
+
+    def _streaming(self):
+        """Whether sound comes in from the phone right now. Not every phone tells
+        AVRCP when it plays, so BlueALSA's own word for it is what counts."""
+        objects = self.bus.get_object("org.bluealsa", "/org/bluealsa").GetManagedObjects(
+            dbus_interface="org.freedesktop.DBus.ObjectManager")
+        return any(bool(i["org.bluealsa.PCM1"].get("Running")) for i in objects.values() if "org.bluealsa.PCM1" in i)
 
     def control(self, method):
         """Play, Pause, Next or Previous on the phone."""
