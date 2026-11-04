@@ -34,3 +34,9 @@ def test_down_repeats_while_held():
 
 def test_left_once():
     assert run([(0, ["left"]), (1, ["left"]), (1.1, [])]) == ["left"]
+
+
+def test_long_hold_goes_fast():
+    steps = [(0, ["down"])] + [(0.4 + 0.15 * i, ["down"]) for i in range(10)] + [(2.0, ["down"]), (2.5, [])]
+    out = run(steps)
+    assert out[0] == "down" and out[-1] == "down_fast"

@@ -2,11 +2,13 @@
 
 Events: up, down, left, right, center, home (center held), vol_up (A),
 vol_down (B) and mute (A and B together). Up, down, A and B repeat while
-held. A or B alone waits COMBO seconds for the other before it counts, so
+held; up and down held past FAST repeat as up_fast and down_fast, which a
+long list takes as a jump to the next letter. A or B alone waits COMBO seconds for the other before it counts, so
 pressing both does not first change the volume.
 """
 REPEAT_AFTER, REPEAT_EVERY = 0.4, 0.15
 HOLD = 0.8
+FAST, FAST_EVERY = 1.5, 0.4
 COMBO = 0.12
 
 REPEATS = {"up": "up", "down": "down", "A": "vol_up", "B": "vol_down"}
@@ -54,8 +56,9 @@ class Keys:
                     self.next[b] = now + REPEAT_EVERY
         for b in ("up", "down"):
             if b in self.down and now >= self.next.get(b, now + 1):
-                events.append(REPEATS[b])
-                self.next[b] = now + REPEAT_EVERY
+                fast = now - self.down[b] >= FAST
+                events.append(b + "_fast" if fast else b)
+                self.next[b] = now + (FAST_EVERY if fast else REPEAT_EVERY)
         if "center" in self.down and not self.held_home and now - self.down["center"] >= HOLD:
             self.held_home = True
             events.append("home")

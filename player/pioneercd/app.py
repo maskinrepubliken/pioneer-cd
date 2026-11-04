@@ -102,10 +102,28 @@ class ListScreen:
     def key(self, app, ev):
         if ev in ("up", "down") and self.rows:
             self.sel = max(0, min(len(self.rows) - 1, self.sel + (1 if ev == "down" else -1)))
+        elif ev in ("up_fast", "down_fast") and self.rows:
+            self.sel = self.jump(1 if ev == "down_fast" else -1)
         elif ev in ("center", "right") and self.rows and self.pick:
             self.pick(app, self.rows[self.sel])
         elif ev == "left" and not self.root:
             app.back()
+
+
+    def jump(self, step):
+        """The first row of the next (or this, or the previous) letter: held long, up and down go by letters."""
+        letter = lambda i: self.rows[i]["label"][:1].upper()
+        i, here = self.sel, letter(self.sel)
+        if step > 0:
+            while i < len(self.rows) - 1 and letter(i) == here:
+                i += 1
+            return i
+        if i > 0 and letter(i - 1) != here:     # at the top of a letter: go to the one before
+            i -= 1
+            here = letter(i)
+        while i > 0 and letter(i - 1) == here:
+            i -= 1
+        return i
 
 
 class MessageScreen:
