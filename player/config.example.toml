@@ -3,7 +3,7 @@
 
 [player]
 # The screen's colours: "ink" (dark) or "paper" (light), as in Pioneer TV.
-theme = "ink"
+theme = "paper"
 # The highest the volume goes (0–100; 28 is the level that sounded right),
 # the screen's brightness (%), minutes without a press before the screen
 # goes dark (0: never), and dB more for Bluetooth, which phones send quieter.
