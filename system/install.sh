@@ -8,11 +8,11 @@ apt-get install -y mpv fonts-ibm-plex python3-spidev python3-smbus2 python3-pil 
 raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
-# The USB sound card is the default output; the name keeps it so when the
-# card numbers change between boots.
-if [ ! -s /etc/asound.conf ]; then
-    printf '%s\n' '# USB sound card (C-Media) into the amplifier' \
-        'defaults.pcm.!card "Device"' 'defaults.ctl.!card "Device"' > /etc/asound.conf
+# The USB sound card is the default output, through the player's own volume
+# control (see the file). An older /etc/asound.conf is kept beside it.
+if ! cmp -s "$REPO/system/asound.conf" /etc/asound.conf; then
+    [ -s /etc/asound.conf ] && cp /etc/asound.conf "/etc/asound.conf.bak-$(date +%F)"
+    install -m 644 "$REPO/system/asound.conf" /etc/asound.conf
 fi
 
 install -d -m 755 /etc/pioneer-cd

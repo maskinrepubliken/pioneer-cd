@@ -2,8 +2,7 @@
 
 A music player for a Raspberry Pi 4: CDs from a USB drive, Jellyfin over the network and Bluetooth
 from a phone, played through a small amplifier and controlled from a tiny colour screen with a
-joystick. Early days: so far the screen and its buttons work, and the power and sound hardware is
-on its way.
+joystick. Radio and Jellyfin play; CD and Bluetooth are next.
 
 ## Part of the pioneer series
 
@@ -15,10 +14,10 @@ This is a pioneer project from Maskinrepubliken. Pioneer projects are small prog
 - [Adafruit Mini Color TFT with Joystick FeatherWing](https://www.adafruit.com/product/3321):
   a 160×80 ST7735R screen on SPI, and a seesaw chip on I2C (address `0x5E`) for the joystick, the
   A/B buttons, the backlight and the screen's reset
-- a USB sound card into an XH-M548 amplifier board (TPA3116D2, two channels, 12–24 V)
-- one 24 V 3.33 A power supply, split with a DC Y-cable between the amplifier and a 5 V USB-C
-  step-down converter that powers the Pi, behind a 2.5 A slow fuse
-- a USB CD drive
+- a USB sound card (C-Media) into a Lepai LP-2020A+ amplifier (TA2020, two channels, 12 V)
+- one 12 V power supply, split with a DC Y-cable between the amplifier and a 5 V USB-C step-down
+  converter that powers the Pi, behind a 2.5 A slow fuse
+- a USB DVD drive (a laptop drive, MATSHITA UJ8B0, in a USB–SATA case)
 
 ## Wiring the screen
 
@@ -51,3 +50,41 @@ python3 display/minitft.py
 It draws colour bars, a white frame and the joystick's direction for a minute. The panel wants
 colour inversion off and RGB order (`MADCTL 0x60`), with the picture 24 rows into the controller's
 memory; these were found on the panel itself and differ from Adafruit's library defaults.
+
+## The player
+
+`player/` is a Python service that owns the screen and the buttons and plays through mpv:
+Sveriges Radio live, with what is on now and next from SR's API, and Jellyfin's albums,
+artists and playlists (called Bibliotek on the screen). Install it on the Pi:
+
+```sh
+git clone https://github.com/maskinrepubliken/pioneer-cd.git
+cd pioneer-cd
+sudo system/install.sh
+```
+
+Then put Jellyfin's address and an API key (Jellyfin: Dashboard → API Keys) in
+`/etc/pioneer-cd/config.toml` and `sudo systemctl restart pioneer-cd`. Logs:
+`journalctl -u pioneer-cd -f`.
+
+The buttons: up and down move in lists, and change track or channel while something plays
+(held, they jump a letter at a time); the middle picks, plays and pauses, and held goes Home;
+left goes back, everywhere. A and B set the volume, both together mute. After ten minutes
+without a press the screen goes dark; the first press only lights it.
+
+## Sound
+
+The USB sound card is the default output, through a volume control of the player's own:
+`system/asound.conf` puts an ALSA softvol control, "Pioneer", in front of the card. The player
+shows the volume as a number from 0 to 100, as on a TV, one step a press of A or B, and sets the
+control to 27·log10(n/100) dB, so 28 is −15 dB: the level that sounded right through the
+amplifier. The card's own control stays at full.
+
+`speaker-test -c 2 -t wav` says "Front Left" and "Front Right" from each speaker in turn.
+
+## Power cuts
+
+A power cut right after an install once left every file just written empty, the systemd unit
+too (an empty unit reads as masked). `install.sh` syncs before it starts the service, and the
+player writes its settings beside the old file and renames it over. If it happens again:
+`find /home/pi/pioneer-cd /etc/pioneer-cd -size 0`, then clone and install again.

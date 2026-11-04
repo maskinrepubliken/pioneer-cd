@@ -6,6 +6,7 @@ holding the middle goes Home, and left goes back. After a while without a
 press the screen goes dark, and the first press only lights it again.
 """
 import json
+import math
 import os
 import subprocess
 import threading
@@ -13,7 +14,6 @@ import time
 
 from . import jellyfin, radio
 
-VOLUME_STEP = 5
 OVERLAY_SECONDS = 2
 
 
@@ -26,9 +26,9 @@ def clock(seconds):
 
 
 class Settings:
-    DEFAULTS = {"volume_cap": 80, "brightness": 100, "sleep_minutes": 10}
+    DEFAULTS = {"volume": 28, "volume_cap": 60, "brightness": 100, "sleep_minutes": 10}
     CHOICES = {
-        "volume_cap": [50, 60, 70, 80, 90, 100],
+        "volume_cap": [30, 40, 50, 60, 70, 80, 100],
         "brightness": [10, 30, 50, 70, 100],
         "sleep_minutes": [0, 2, 5, 10, 30, 60],
     }
@@ -48,7 +48,10 @@ class Settings:
     def step(self, name, delta):
         choices = self.CHOICES[name]
         i = min(range(len(choices)), key=lambda i: abs(choices[i] - self.values[name]))
-        self.values[name] = choices[max(0, min(len(choices) - 1, i + delta))]
+        self.set(name, choices[max(0, min(len(choices) - 1, i + delta))])
+
+    def set(self, name, value):
+        self.values[name] = value
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         # Written beside and renamed over, and synced: a power cut leaves the old file, not an empty one.
         tmp = self.path + ".tmp"
@@ -60,26 +63,42 @@ class Settings:
 
 
 class Volume:
-    """The USB sound card's own volume, through amixer."""
+    """The volume as on a TV: a number from 0 to 100, one step a press.
 
-    def __init__(self, card="Device", control="Speaker"):
-        self.args = ["amixer", "-q", "-c", card, "sset", control]
-        self.level = 50
+    It sets "Pioneer", the softvol control in system/asound.conf, to
+    27·log10(n/100) dB: 28 is -15 dB, the level that sounded right through
+    the Lepai with its knob where it is, 50 is -8 dB and 100 is full. The
+    card's own control stays at full.
+    """
+    CARD, CONTROL = "Device", "Pioneer"
+
+    def __init__(self, level):
+        self.level = level
         self.muted = False
-        try:
-            out = subprocess.run(["amixer", "-c", card, "sget", control], capture_output=True, text=True).stdout
-            self.level = int(out.split("[")[1].split("%")[0])
-        except (OSError, IndexError, ValueError):
-            pass
+        run = lambda *a: subprocess.run(["amixer", "-q", "-c", self.CARD, *a], capture_output=True)
+        run("sset", "Speaker", "100%", "unmute")
+        if run("sget", self.CONTROL).returncode:
+            # softvol makes its control the first time something plays: a second of silence.
+            subprocess.run(["aplay", "-q", "-d", "1", "-f", "cd", "/dev/zero"], capture_output=True)
+        self.apply()
+
+    @staticmethod
+    def db(level):
+        return max(-60.0, 27 * math.log10(level / 100)) if level > 0 else -60.0
+
+    def apply(self):
+        db = -60.0 if self.muted else self.db(self.level)
+        subprocess.run(["amixer", "-q", "-c", self.CARD, "sset", self.CONTROL, "--", f"{db:.1f}dB"],
+                       capture_output=True)
 
     def set(self, level, cap):
         self.level = max(0, min(cap, level))
         self.muted = False
-        subprocess.run(self.args + [f"{self.level}%", "unmute"])
+        self.apply()
 
     def toggle_mute(self):
         self.muted = not self.muted
-        subprocess.run(self.args + ["mute" if self.muted else "unmute"])
+        self.apply()
 
 
 # ---------------------------------------------------------------- screens
@@ -144,19 +163,19 @@ class MessageScreen:
 
 
 class PlayingScreen:
-    """Spelas nu: Jellyfin's queue in mpv. Up and down change track."""
+    """Spelas nu: the queue from Jellyfin (Bibliotek on the screen) in mpv. Up and down change track."""
 
     def view(self, app):
         p = app.mpv.props
         q = app.queue
         i = p.get("playlist-pos")
         if not q or i is None or i < 0 or p.get("idle-active"):
-            return {"kind": "message", "status": ("JELLYFIN", ""), "title": "Inget spelas",
+            return {"kind": "message", "status": ("BIBLIOTEK", ""), "title": "Inget spelas",
                     "legend": [("◀", "tillbaka")]}
         t = q[min(i, len(q) - 1)]
         pos, dur = p.get("time-pos") or 0, p.get("duration") or jellyfin.seconds(t)
         paused = bool(p.get("pause"))
-        return {"kind": "playing", "status": ("JELLYFIN", f"{i + 1} AV {len(q)}"),
+        return {"kind": "playing", "status": ("BIBLIOTEK", f"{i + 1} AV {len(q)}"),
                 "title": t.get("Name", ""), "subtitle": jellyfin.artist(t),
                 "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)), "paused": paused,
                 "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista")]}
@@ -197,7 +216,7 @@ class RadioScreen:
 
 
 class SettingsScreen:
-    ROWS = [("volume_cap", "Volymtak", "{} %"), ("brightness", "Ljusstyrka", "{} %"),
+    ROWS = [("volume_cap", "Volymtak", "{}"), ("brightness", "Ljusstyrka", "{} %"),
             ("sleep_minutes", "Vila efter", "{} min")]
 
     def __init__(self):
@@ -255,12 +274,12 @@ class App:
 
     # navigation
     def refresh_home(self):
-        rows = [{"label": "CD", "id": "cd"}, {"label": "Jellyfin", "id": "jellyfin"},
+        rows = [{"label": "CD", "id": "cd"}, {"label": "Bibliotek", "id": "jellyfin"},
                 {"label": "Radio", "id": "radio"}, {"label": "Bluetooth", "id": "bluetooth"},
                 {"label": "Inställningar", "id": "settings"}]
         if self.playing and not self.mpv.props.get("idle-active"):
             rows.insert(0, {"label": "Spelas nu", "id": "playing",
-                            "value": self.channels[self.channel][1] if self.playing == "radio" else "Jellyfin"})
+                            "value": self.channels[self.channel][1] if self.playing == "radio" else "Bibliotek"})
         home = self.stack[0]
         if [r["id"] for r in home.rows] != [r["id"] for r in rows]:
             home.sel = 0
@@ -306,11 +325,11 @@ class App:
 
     def open_jellyfin(self):
         if not self.jf:
-            self.push(MessageScreen("JELLYFIN", "Inte inställd", "API-nyckeln saknas i config.toml."))
+            self.push(MessageScreen("BIBLIOTEK", "Inte inställd", "Jellyfins API-nyckel saknas."))
             return
         rows = [{"label": "Album", "id": "albums"}, {"label": "Artister", "id": "artists"},
                 {"label": "Spellistor", "id": "playlists"}]
-        self.push(ListScreen("Jellyfin", rows, lambda app, r: app.open_library(r["id"])))
+        self.push(ListScreen("Bibliotek", rows, lambda app, r: app.open_library(r["id"])))
 
     def open_library(self, kind):
         if kind == "albums":
@@ -367,6 +386,7 @@ class App:
         self.backlight = self.settings["brightness"]
         if self.volume.level > self.settings["volume_cap"]:
             self.volume.set(self.settings["volume_cap"], self.settings["volume_cap"])
+            self.settings.set("volume", self.volume.level)
 
     def handle(self, ev, now):
         self.last_press = now
@@ -375,8 +395,8 @@ class App:
             self.backlight = self.settings["brightness"]
             return
         if ev in ("vol_up", "vol_down"):
-            delta = VOLUME_STEP if ev == "vol_up" else -VOLUME_STEP
-            self.volume.set(self.volume.level + delta, self.settings["volume_cap"])
+            self.volume.set(self.volume.level + (1 if ev == "vol_up" else -1), self.settings["volume_cap"])
+            self.settings.set("volume", self.volume.level)
             self.overlay_until = now + OVERLAY_SECONDS
         elif ev == "mute":
             self.volume.toggle_mute()

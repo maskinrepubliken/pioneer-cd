@@ -30,7 +30,8 @@ def main():
     board.show(ui.render({"kind": "start"}))
     settings = Settings(os.path.join(state, "settings.json"))
     board.backlight(settings["brightness"])
-    app = App(config, Mpv(os.path.join(run, "mpv.sock")), Volume(), settings)
+    volume = Volume(min(settings["volume"], settings["volume_cap"]))
+    app = App(config, Mpv(os.path.join(run, "mpv.sock")), volume, settings)
     app.draw = lambda view: board.show(ui.render(view))
     keys = Keys()
     shown, backlight = None, settings["brightness"]

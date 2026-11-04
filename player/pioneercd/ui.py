@@ -165,19 +165,15 @@ def draw_playing(d, v):
 
 
 def draw_volume(d, vol):
-    x0, y0, x1, y1 = 9, 15, WIDTH - 10, 63
+    """The volume as a number, as on a TV; muted, the word Tyst."""
+    x0, y0, x1, y1 = 30, 17, WIDTH - 31, 61
     d.rounded_rectangle([x0, y0, x1, y1], radius=9, fill=PAPER_RAISED, outline=LINE_STRONG)
-    d.text((x0 + 8, y0 + 6), "VOLYM", font=MONO(), fill=INK_FAINT)
-    value = "Tyst" if vol["muted"] else f"{vol['level']} %"
-    d.text((x1 - 8 - d.textlength(value, font=TITLE()), y0 + 2), value, font=TITLE(), fill=INK)
-    filled = 0 if vol["muted"] else round(vol["level"] / 10)
-    for i in range(10):
-        cx, cy = x0 + 13 + i * 12, y1 - 13
-        box = [cx - 4, cy - 4, cx + 4, cy + 4]
-        if i < filled:
-            d.ellipse(box, fill=INK)
-        else:
-            d.ellipse(box, outline=LINE_STRONG, width=1)
+    label = "VOLYM"
+    d.text(((WIDTH - d.textlength(label, font=MONO())) / 2, y0 + 5), label, font=MONO(), fill=INK_FAINT)
+    value, f = ("Tyst", TITLE()) if vol["muted"] else (str(vol["level"]), font("Mono-SemiBold", 22))
+    box = d.textbbox((0, 0), value, font=f)
+    d.text(((WIDTH - (box[2] - box[0])) / 2 - box[0], y0 + 27 - (box[3] - box[1]) / 2 - box[1]),
+           value, font=f, fill=INK)
 
 
 def draw_start(d):
