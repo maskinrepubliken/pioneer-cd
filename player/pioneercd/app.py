@@ -168,7 +168,7 @@ class PlayingScreen:
         t = q[min(i, len(q) - 1)]
         pos, dur = p.get("time-pos") or 0, p.get("duration") or jellyfin.seconds(t)
         paused = bool(p.get("pause"))
-        return {"kind": "playing", "status": ("BIBLIOTEK", f"{i + 1} AV {len(q)}"),
+        return {"kind": "playing", "position": f"{i + 1} av {len(q)}",
                 "title": t.get("Name", ""), "subtitle": jellyfin.artist(t),
                 "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)), "paused": paused,
                 "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista")]}
@@ -192,7 +192,7 @@ class RadioScreen:
         title, when = info.get("now", (name, ""))
         nxt = info.get("next")
         stopped = app.mpv.props.get("idle-active")
-        return {"kind": "playing", "status": (f"RADIO · {name}", "DIREKT"), "title": title, "subtitle": when,
+        return {"kind": "playing", "title": title, "subtitle": f"{name} · {when}" if when else name,
                 "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
                 "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "lista")]}
 
@@ -224,14 +224,15 @@ class BluetoothScreen:
                     "text": "Anslut till Pioneer CD.", "legend": [("◀", "stäng av")]}
         if not st.get("title"):
             playing = st.get("streaming")
-            return {"kind": "message", "status": ("BLÅTAND", st["device"].upper()),
-                    "title": "Spelar" if playing else "Ansluten",
+            return {"kind": "message",
+                    "title": f"Spelar från {st['device']}" if playing else f"{st['device']} är ansluten",
                     "text": "Telefonen visar inte vad." if playing else "Spela något på telefonen.",
                     "legend": [("◀", "tillbaka")]}
         paused = not (st.get("status") == "playing" or st.get("streaming"))
         dur, pos = st.get("duration") or 0, st.get("position") or 0
-        return {"kind": "playing", "status": ("BLÅTAND", st["device"].upper()),
-                "title": st["title"], "subtitle": st.get("artist", ""),
+        artist = st.get("artist", "")
+        return {"kind": "playing",
+                "title": st["title"], "subtitle": f"{artist} · {st['device']}" if artist else st["device"],
                 "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)) if dur else None,
                 "paused": paused,
                 "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "tillbaka")]}
@@ -327,7 +328,7 @@ class App:
             result = fetch()
         except Exception as e:  # network, HTTP or JSON: all mean the same to the listener
             print("jellyfin:", repr(e), flush=True)
-            self.push(MessageScreen(status, "Fel: servern svarar inte", "", error=True,
+            self.push(MessageScreen(status, "Fel: servern svarar inte", "Biblioteket gick inte att nå.", error=True,
                                     retry=lambda app: app.load(status, fetch, then)))
             return
         then(result)

@@ -1,13 +1,13 @@
 """Draws the screens, 160×80, in the paper theme of Pioneer TV.
 
 render() takes a view, a plain dict the app builds, and returns a PIL image.
-The views:
+There is no status row: the screen is small, and all of it goes to what
+matters. The views:
 
-    {"kind": "list", "status": ("KÄLLA", "1 AV 5"), "rows": [(num, label, value), ...],
-     "selected": 0, "legend": [("●", "välj"), ...]}
-    {"kind": "message", "status": (...), "title": "...", "text": "...", "error": False, "legend": [...]}
-    {"kind": "playing", "status": (...), "title": "...", "subtitle": "...",
-     "progress": 0.25 or None, "times": ("1:23", "5:29") or None, "line": "...",
+    {"kind": "list", "rows": [(num, label, value), ...], "selected": 0, "legend": [("●", "välj"), ...]}
+    {"kind": "message", "title": "...", "text": "...", "error": False, "legend": [...]}
+    {"kind": "playing", "title": "...", "subtitle": "...", "progress": 0.25 or None,
+     "times": ("1:23", "5:29") or None, "position": "3 av 11", "line": "...",
      "paused": False, "legend": [...]}
     {"kind": "start"} and {"kind": "off"}
 
@@ -19,17 +19,25 @@ from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 160, 80
 
-# Maskinrepubliken, paper theme
-PAPER = "#f4efe4"
-PAPER_RAISED = "#fbf8f1"
-PAPER_SUNKEN = "#eae3d4"
-INK = "#1c1613"
-INK_MUTED = "#4c4641"
-INK_FAINT = "#5d5752"
-LINE = "#cdc8be"
-LINE_STRONG = "#7b756f"
-OCHRE = "#f5cf5a"
-ALARM = "#8e2f24"
+# Maskinrepubliken's themes, as in Pioneer TV: paper (light) and ink (dark).
+# The ochre row is the same in both, with ink on it.
+THEMES = {
+    "paper": {"PAPER": "#f4efe4", "PAPER_RAISED": "#fbf8f1", "PAPER_SUNKEN": "#eae3d4", "INK": "#1c1613",
+              "INK_MUTED": "#4c4641", "INK_FAINT": "#5d5752", "LINE": "#cdc8be", "LINE_STRONG": "#7b756f",
+              "ALARM": "#8e2f24", "FRAME": "#1c1613"},
+    "ink": {"PAPER": "#1c1613", "PAPER_RAISED": "#291f1a", "PAPER_SUNKEN": "#3f3934", "INK": "#f4efe4",
+            "INK_MUTED": "#c9c4ba", "INK_FAINT": "#a29d95", "LINE": "#3f3934", "LINE_STRONG": "#77716b",
+            "ALARM": "#e08076", "FRAME": "#1c1613"},
+}
+OCHRE, ON_OCHRE = "#f5cf5a", "#1c1613"
+
+
+def theme(name):
+    """Sets the colours below to a theme's."""
+    globals().update(THEMES[name])
+
+
+theme("paper")
 
 FONT_DIR = os.environ.get("PIONEERCD_FONTS", "/usr/share/fonts/truetype/ibm-plex")
 _fonts = {}
@@ -45,11 +53,13 @@ def font(name, size):
 SANS = lambda: font("Sans-Regular", 10)
 SANS_BOLD = lambda: font("Sans-SemiBold", 10)
 TITLE = lambda: font("Sans-SemiBold", 13)
-SUB = lambda: font("Sans-Regular", 9)
+BIG = lambda: font("Sans-SemiBold", 16)
+SUB = lambda: font("Sans-Regular", 10)
 MONO = lambda: font("Mono-Regular", 8)
 MONO_BOLD = lambda: font("Mono-SemiBold", 8)
 
-STATUS_H, LEGEND_H, ROW_H = 12, 13, 16
+LEGEND_H, ROW_H, VISIBLE = 13, 16, 4
+BOTTOM = HEIGHT - 1 - LEGEND_H        # where the legend starts
 
 
 def fit(d, text, f, width):
@@ -59,15 +69,6 @@ def fit(d, text, f, width):
     while text and d.textlength(text + "…", font=f) > width:
         text = text[:-1]
     return text.rstrip() + "…"
-
-
-def status(d, left, right):
-    d.line([(1, STATUS_H), (WIDTH - 2, STATUS_H)], fill=LINE)
-    f = MONO()
-    right = right or ""
-    rw = d.textlength(right, font=f)
-    d.text((WIDTH - 6 - rw, 2), right, font=f, fill=INK_FAINT)
-    d.text((5, 2), fit(d, left or "", f, WIDTH - 16 - rw), font=f, fill=INK_FAINT)
 
 
 def glyph(d, ch, x, y):
@@ -104,64 +105,74 @@ def legend(d, items):
 
 def draw_list(d, v):
     rows, sel = v["rows"], v.get("selected", 0)
-    visible = 3
-    first = min(max(0, sel - 1), max(0, len(rows) - visible))
-    y = STATUS_H + 2
-    for i in range(first, min(len(rows), first + visible)):
+    first = min(max(0, sel - 1), max(0, len(rows) - VISIBLE))
+    y = (BOTTOM - VISIBLE * ROW_H) // 2 + 1
+    right = WIDTH - 9 if len(rows) > VISIBLE else WIDTH - 5
+    for i in range(first, min(len(rows), first + VISIBLE)):
         num, label, value = rows[i]
         on = i == sel
         if on:
-            d.rounded_rectangle([4, y, WIDTH - 5, y + ROW_H - 1], radius=ROW_H // 2, fill=OCHRE)
+            d.rounded_rectangle([4, y, right, y + ROW_H - 1], radius=ROW_H // 2, fill=OCHRE)
         x = 10
+        fg = ON_OCHRE if on else INK
         if num is not None:
-            d.text((x, y + 4), str(num), font=MONO(), fill=INK if on else INK_FAINT)
+            d.text((x, y + 4), str(num), font=MONO(), fill=fg if on else INK_FAINT)
             x += 13
         value = fit(d, value or "", MONO(), 80)
         vw = d.textlength(value, font=MONO())
-        d.text((WIDTH - 10 - vw, y + 4), value, font=MONO(), fill=INK if on else INK_FAINT)
+        d.text((right - 6 - vw, y + 4), value, font=MONO(), fill=fg if on else INK_FAINT)
         f = SANS_BOLD() if on else SANS()
-        d.text((x, y + 2), fit(d, label, f, WIDTH - 22 - x - vw), font=f, fill=INK)
+        d.text((x, y + 2), fit(d, label, f, right - 12 - x - vw), font=f, fill=fg)
         y += ROW_H
+    if len(rows) > VISIBLE:
+        # Where in the list: a thin bar in the right edge, its thumb as long as what shows.
+        top, bottom = 4, BOTTOM - 4
+        d.rounded_rectangle([WIDTH - 5, top, WIDTH - 4, bottom], radius=1, fill=PAPER_SUNKEN)
+        h = max(4, round((bottom - top) * VISIBLE / len(rows)))
+        t = top + round((bottom - top - h) * first / (len(rows) - VISIBLE))
+        d.rounded_rectangle([WIDTH - 5, t, WIDTH - 4, t + h], radius=1, fill=INK_FAINT)
     if not rows:
-        d.text((10, y + 2), v.get("empty", "Tomt"), font=SANS(), fill=INK_MUTED)
+        d.text((10, 8), v.get("empty", "Tomt"), font=SANS(), fill=INK_MUTED)
 
 
 def draw_message(d, v):
-    top, bottom = STATUS_H, HEIGHT - 1 - LEGEND_H
-    mid = (top + bottom) // 2
+    mid = BOTTOM // 2
     title, text = v.get("title", ""), v.get("text", "")
-    f = TITLE()
     color = ALARM if v.get("error") else INK
+    f = BIG() if d.textlength(title, font=BIG()) <= WIDTH - 16 else TITLE()   # a long title steps down
     if text:
-        d.text((8, mid - 14), fit(d, title, f, WIDTH - 16), font=f, fill=color)
-        d.text((8, mid + 2), fit(d, text, SUB(), WIDTH - 16), font=SUB(), fill=INK_MUTED)
+        d.text((8, mid - 17), fit(d, title, f, WIDTH - 16), font=f, fill=color)
+        d.text((8, mid + 3), fit(d, text, SUB(), WIDTH - 16), font=SUB(), fill=INK_MUTED)
     else:
-        d.text((8, mid - 8), fit(d, title, f, WIDTH - 16), font=f, fill=color)
+        d.text((8, mid - 10), fit(d, title, f, WIDTH - 16), font=f, fill=color)
 
 
 def draw_playing(d, v):
-    x, y = 7, STATUS_H + 2
-    d.text((x, y), fit(d, v.get("title", ""), TITLE(), WIDTH - 2 * x), font=TITLE(), fill=INK)
-    d.text((x, y + 16), fit(d, v.get("subtitle", ""), SUB(), WIDTH - 2 * x), font=SUB(), fill=INK_MUTED)
-    y += 31
+    x = 7
+    d.text((x, 3), fit(d, v.get("title", ""), BIG(), WIDTH - 2 * x), font=BIG(), fill=INK)
+    d.text((x, 23), fit(d, v.get("subtitle", ""), SUB(), WIDTH - 2 * x), font=SUB(), fill=INK_MUTED)
+    y = 42
     if v.get("progress") is not None:
         d.rounded_rectangle([x, y, WIDTH - x, y + 2], radius=1, fill=PAPER_SUNKEN)
         end = x + round((WIDTH - 2 * x) * max(0.0, min(1.0, v["progress"])))
         if end > x:
             d.rounded_rectangle([x, y, end, y + 2], radius=1, fill=INK)
-    y += 5
+    y += 6
     if v.get("times"):
         left, right = v["times"]
         d.text((x, y), left, font=MONO(), fill=INK_FAINT)
         d.text((WIDTH - x - d.textlength(right, font=MONO()), y), right, font=MONO(), fill=INK_FAINT)
     elif v.get("line"):
-        d.text((x, y - 2), fit(d, v["line"], MONO(), WIDTH - 2 * x), font=MONO(), fill=INK_FAINT)
+        d.text((x, y - 6), fit(d, v["line"], MONO(), WIDTH - 2 * x), font=MONO(), fill=INK_FAINT)
     if v.get("paused"):
         w = 10 + d.textlength("Pausad", font=MONO_BOLD())
         px = (WIDTH - w) // 2
         d.rectangle([px, y + 2, px + 1, y + 7], fill=INK)
         d.rectangle([px + 4, y + 2, px + 5, y + 7], fill=INK)
         d.text((px + 10, y), "Pausad", font=MONO_BOLD(), fill=INK)
+    elif v.get("position") and v.get("times"):
+        pos = v["position"]
+        d.text(((WIDTH - d.textlength(pos, font=MONO())) / 2, y), pos, font=MONO(), fill=INK_FAINT)
 
 
 def draw_volume(d, vol):
@@ -185,19 +196,18 @@ def draw_start(d):
 
 def render(v):
     if v["kind"] == "off":
-        return Image.new("RGB", (WIDTH, HEIGHT), INK)
+        return Image.new("RGB", (WIDTH, HEIGHT), "#000000")
     img = Image.new("RGB", (WIDTH, HEIGHT), PAPER)
     d = ImageDraw.Draw(img)
     kind = v["kind"]
     if kind == "start":
         draw_start(d)
     else:
-        status(d, *v.get("status", ("", "")))
         {"list": draw_list, "message": draw_message, "playing": draw_playing}[kind](d, v)
         if v.get("volume"):
             legend(d, [("A", "upp"), ("B", "ner"), ("A+B", "tyst")])
             draw_volume(d, v["volume"])
         elif v.get("legend"):
             legend(d, v["legend"])
-    d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=INK)
+    d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=FRAME)   # dark edge, as the panel's own
     return img

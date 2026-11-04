@@ -26,6 +26,7 @@ def main():
     state = os.environ.get("STATE_DIRECTORY", os.path.expanduser("~/.local/state/pioneer-cd"))
     run = os.environ.get("RUNTIME_DIRECTORY", "/tmp")
 
+    ui.theme(config.get("player", {}).get("theme", "ink"))
     board = Board()
     board.show(ui.render({"kind": "start"}))
     settings = Settings(os.path.join(state, "settings.json"), config.get("player"))
