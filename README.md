@@ -55,7 +55,8 @@ memory; these were found on the panel itself and differ from Adafruit's library 
 
 `player/` is a Python service that owns the screen and the buttons and plays through mpv:
 Sveriges Radio live, with what is on now and next from SR's API, and Jellyfin's albums,
-artists and playlists (called Bibliotek on the screen). Install it on the Pi:
+artists and playlists (called Bibliotek on the screen), with suggestions: most played,
+recently played and recently added. Half a track, or four minutes, counts as a play in Jellyfin. Install it on the Pi:
 
 ```sh
 git clone https://github.com/maskinrepubliken/pioneer-cd.git

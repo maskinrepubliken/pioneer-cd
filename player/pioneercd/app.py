@@ -261,6 +261,7 @@ class App:
         self.channels = [(c["id"], c["name"]) for c in chans] if chans else radio.CHANNELS
         self.playing = None         # "radio", "jellyfin" or None
         self.queue = []
+        self.counted = set()        # queue positions already counted as played in Jellyfin
         self.channel = 0
         self.radio_info = {}
         self.radio_fetched = None
@@ -327,8 +328,8 @@ class App:
         if not self.jf:
             self.push(MessageScreen("BIBLIOTEK", "Inte inställd", "Jellyfins API-nyckel saknas."))
             return
-        rows = [{"label": "Album", "id": "albums"}, {"label": "Artister", "id": "artists"},
-                {"label": "Spellistor", "id": "playlists"}]
+        rows = [{"label": "Spellistor", "id": "playlists"}, {"label": "Förslag", "id": "suggestions"},
+                {"label": "Album", "id": "albums"}, {"label": "Artister", "id": "artists"}]
         self.push(ListScreen("Bibliotek", rows, lambda app, r: app.open_library(r["id"])))
 
     def open_library(self, kind):
@@ -342,27 +343,60 @@ class App:
         elif kind == "playlists":
             self.load("SPELLISTOR", self.jf.playlists, lambda items: self.push(ListScreen(
                 "Spellistor", [{"label": p["Name"], "item": p} for p in items], self.open_tracks)))
+        elif kind == "suggestions":
+            rows = [{"label": "Ofta spelade", "fetch": self.jf.most_played},
+                    {"label": "Nyligen spelade", "fetch": self.jf.recently_played},
+                    {"label": "Nyinkommet", "fetch": self.jf.recently_added, "albums": True}]
+            self.push(ListScreen("Förslag", rows, lambda app, r: app.load(
+                r["label"].upper(), r["fetch"],
+                lambda items: app.push(app.album_list(r["label"], items) if r.get("albums")
+                                       else app.track_list(r["label"], items, False)))))
 
     def album_list(self, title, albums):
         rows = [{"label": a["Name"], "value": str(a.get("ProductionYear") or ""), "item": a} for a in albums]
         return ListScreen(title, rows, self.open_tracks, verb="öppna")
 
+    def track_list(self, title, tracks, album=True):
+        """An album's tracks by number and length; other lists (playlists, suggestions) by artist."""
+        if album and all(t.get("IndexNumber") for t in tracks):
+            rows = [{"num": t["IndexNumber"], "label": t.get("Name", ""), "value": clock(jellyfin.seconds(t))}
+                    for t in tracks]
+        else:
+            rows = [{"label": t.get("Name", ""), "value": jellyfin.artist(t)} for t in tracks]
+        for i, row in enumerate(rows):
+            row["index"] = i
+        return ListScreen(title, rows, lambda app, r: app.play_tracks(tracks, r["index"]), verb="spela")
+
     def open_tracks(self, app, row):
         item = row["item"]
-
-        def show(tracks):
-            rows = [{"num": t.get("IndexNumber") or i + 1, "label": t.get("Name", ""),
-                     "value": clock(jellyfin.seconds(t)), "index": i} for i, t in enumerate(tracks)]
-            self.push(ListScreen(item["Name"], rows, lambda app, r: app.play_tracks(tracks, r["index"]),
-                                 verb="spela"))
-        self.load(item["Name"].upper(), lambda: self.jf.tracks(item), show)
+        album = item.get("Type") != "Playlist"
+        self.load(item["Name"].upper(), lambda: self.jf.tracks(item),
+                  lambda tracks: self.push(self.track_list(item["Name"], tracks, album)))
 
     def play_tracks(self, tracks, start):
         self.queue = tracks
+        self.counted = set()
         self.playing = "jellyfin"
         self.mpv.play([self.jf.stream_url(t) for t in tracks], start,
                       headers=[f"Authorization: {self.jf.auth}"])
         self.push(PlayingScreen())
+
+    def count_play(self):
+        """Half a track, or four minutes of it, counts as a play in Jellyfin, as in its own apps."""
+        p = self.mpv.props
+        i, pos, dur = p.get("playlist-pos"), p.get("time-pos") or 0, p.get("duration") or 0
+        if self.playing != "jellyfin" or i is None or not 0 <= i < len(self.queue) or i in self.counted:
+            return
+        if dur and pos >= min(240, dur / 2):
+            self.counted.add(i)
+            track = self.queue[i]
+
+            def run():
+                try:
+                    self.jf.mark_played(track)
+                except Exception as e:
+                    print("jellyfin played:", repr(e), flush=True)
+            threading.Thread(target=run, daemon=True).start()
 
     # radio
     def play_radio(self, index):
@@ -414,6 +448,7 @@ class App:
         if self.radio_fetched is None or now - self.radio_fetched > 60:
             self.radio_fetched = now
             self.fetch_radio()
+        self.count_play()
         self.refresh_home()
 
     def view(self, now):

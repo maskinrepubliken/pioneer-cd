@@ -23,11 +23,12 @@ class Jellyfin:
         return (f'MediaBrowser Client="Pioneer CD", Device="Pioneer CD", DeviceId="{DEVICE_ID}", '
                 f'Version="1", Token="{self.key}"')
 
-    def get(self, path, **params):
+    def get(self, path, method="GET", **params):
         query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-        req = urllib.request.Request(f"{self.url}{path}?{query}", headers={"Authorization": self.auth})
+        req = urllib.request.Request(f"{self.url}{path}?{query}", headers={"Authorization": self.auth},
+                                     method=method)
         with urllib.request.urlopen(req, timeout=8) as r:
-            return json.load(r)
+            return json.load(r) if method == "GET" else None
 
     def uid(self):
         if not self._uid:
@@ -54,6 +55,22 @@ class Jellyfin:
 
     def playlists(self):
         return self._items(IncludeItemTypes="Playlist", SortBy="SortName")
+
+    def most_played(self, limit=50):
+        return self._items(IncludeItemTypes="Audio", Filters="IsPlayed", SortBy="PlayCount,DatePlayed",
+                           SortOrder="Descending", Limit=limit)
+
+    def recently_played(self, limit=50):
+        return self._items(IncludeItemTypes="Audio", Filters="IsPlayed", SortBy="DatePlayed",
+                           SortOrder="Descending", Limit=limit)
+
+    def recently_added(self, limit=50):
+        return self._items(IncludeItemTypes="MusicAlbum", SortBy="DateCreated", SortOrder="Descending",
+                           Limit=limit, Fields="ProductionYear")
+
+    def mark_played(self, track):
+        """Counts a play: Jellyfin raises the track's play count and its date played."""
+        self.get(f"/UserPlayedItems/{track['Id']}", method="POST", userId=self.uid())
 
     def tracks(self, item):
         if item.get("Type") == "Playlist":
