@@ -8,7 +8,7 @@ import os
 import time
 import tomllib
 
-from . import ui
+from . import cd, ui
 from .app import App, Settings, Volume
 from .hw import Board
 from .keys import Keys
@@ -28,7 +28,7 @@ def main():
 
     board = Board()
     board.show(ui.render({"kind": "start"}))
-    settings = Settings(os.path.join(state, "settings.json"))
+    settings = Settings(os.path.join(state, "settings.json"), config.get("player"))
     board.backlight(settings["brightness"])
     volume = Volume(min(settings["volume"], settings["volume_cap"]))
     try:
@@ -40,6 +40,7 @@ def main():
         bt = None
     app = App(config, Mpv(os.path.join(run, "mpv.sock")), volume, settings, bt)
     app.draw = lambda view: board.show(ui.render(view))
+    cd.watch(lambda disc: setattr(app, "disc", disc))
     keys = Keys()
     shown, backlight = None, settings["brightness"]
     while True:

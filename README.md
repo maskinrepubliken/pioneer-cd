@@ -77,6 +77,11 @@ The buttons: up and down move in lists, and change track or channel while someth
 left goes back, everywhere. A and B set the volume, both together mute. After ten minutes
 without a press the screen goes dark; the first press only lights it.
 
+Home lists what there is to play: Spelas nu while something plays, CD while a disc with music is
+in the drive, Radio, Bibliotek and Blåtand. There is no settings screen: the volume cap, the
+brightness, the minutes before the screen sleeps and the Bluetooth boost are set in the config's
+`[player]` table; the volume itself is kept by the player.
+
 ## Sound
 
 The USB sound card is the default output, through a volume control of the player's own:

@@ -26,30 +26,21 @@ def clock(seconds):
 
 
 class Settings:
-    DEFAULTS = {"volume": 28, "volume_cap": 60, "brightness": 100, "sleep_minutes": 10, "bt_boost": 8}
-    CHOICES = {
-        "bt_boost": [0, 4, 8, 12],
-        "volume_cap": [30, 40, 50, 60, 70, 80, 100],
-        "brightness": [10, 30, 50, 70, 100],
-        "sleep_minutes": [0, 2, 5, 10, 30, 60],
-    }
+    """What the config's [player] table sets (see config.example.toml), and the
+    volume, which is the player's own and kept between boots in a state file."""
+    DEFAULTS = {"volume": 28, "volume_cap": 60, "brightness": 100, "sleep_minutes": 10, "bluetooth_boost": 8}
 
-    def __init__(self, path):
+    def __init__(self, path, config=None):
         self.path = path
-        self.values = dict(self.DEFAULTS)
+        self.values = {**self.DEFAULTS, **(config or {})}
         try:
             with open(path) as f:
-                self.values.update(json.load(f))
-        except (OSError, ValueError):
+                self.values["volume"] = int(json.load(f)["volume"])
+        except (OSError, ValueError, KeyError, TypeError):
             pass
 
     def __getitem__(self, name):
         return self.values[name]
-
-    def step(self, name, delta):
-        choices = self.CHOICES[name]
-        i = min(range(len(choices)), key=lambda i: abs(choices[i] - self.values[name]))
-        self.set(name, choices[max(0, min(len(choices) - 1, i + delta))])
 
     def set(self, name, value):
         self.values[name] = value
@@ -57,7 +48,7 @@ class Settings:
         # Written beside and renamed over, and synced: a power cut leaves the old file, not an empty one.
         tmp = self.path + ".tmp"
         with open(tmp, "w") as f:
-            json.dump(self.values, f)
+            json.dump({"volume": self.values["volume"]}, f)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, self.path)
@@ -254,40 +245,6 @@ class BluetoothScreen:
             app.back()
 
 
-class SettingsScreen:
-    ROWS = [("volume_cap", "Volymtak", "{}"), ("brightness", "Ljusstyrka", "{} %"),
-            ("sleep_minutes", "Vila efter", "{} min"), ("bt_boost", "Blåtand-nivå", "+{} dB")]
-
-    def __init__(self):
-        self.sel = 0
-        self.editing = False
-
-    def view(self, app):
-        def value(name, fmt):
-            v = app.settings[name]
-            return "aldrig" if name == "sleep_minutes" and v == 0 else fmt.format(v)
-        rows = [(None, label, ("‹ " + value(n, f) + " ›") if self.editing and i == self.sel else value(n, f))
-                for i, (n, label, f) in enumerate(self.ROWS)]
-        legend = [("●", "klar"), ("▲▼", "ändra")] if self.editing else [("●", "ändra"), ("◀", "tillbaka")]
-        return {"kind": "list", "status": ("INSTÄLLNINGAR", f"{self.sel + 1} AV {len(rows)}"),
-                "rows": rows, "selected": self.sel, "legend": legend}
-
-    def key(self, app, ev):
-        name = self.ROWS[self.sel][0]
-        if self.editing:
-            if ev in ("up", "down"):
-                app.settings.step(name, 1 if ev == "up" else -1)
-                app.apply_settings()
-            elif ev in ("center", "left"):
-                self.editing = False
-        elif ev in ("up", "down"):
-            self.sel = max(0, min(len(self.ROWS) - 1, self.sel + (1 if ev == "down" else -1)))
-        elif ev in ("center", "right"):
-            self.editing = True
-        elif ev == "left":
-            app.back()
-
-
 # ---------------------------------------------------------------- the app
 
 
@@ -295,6 +252,7 @@ class App:
     def __init__(self, config, mpv, volume, settings, bt=None):
         self.mpv, self.volume, self.settings, self.bt = mpv, volume, settings, bt
         self.bt_polled = 0
+        self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
@@ -315,9 +273,10 @@ class App:
 
     # navigation
     def refresh_home(self):
-        rows = [{"label": "CD", "id": "cd"}, {"label": "Bibliotek", "id": "jellyfin"},
-                {"label": "Radio", "id": "radio"}, {"label": "Blåtand", "id": "bluetooth"},
-                {"label": "Inställningar", "id": "settings"}]
+        rows = [{"label": "Radio", "id": "radio"}, {"label": "Bibliotek", "id": "jellyfin"},
+                {"label": "Blåtand", "id": "bluetooth"}]
+        if self.disc == "audio":
+            rows.insert(0, {"label": "CD", "id": "cd"})
         if self.bt_playing():
             rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
         elif self.playing and not self.mpv.props.get("idle-active"):
@@ -349,10 +308,8 @@ class App:
                                  verb="spela"))
         elif kind == "jellyfin":
             self.open_jellyfin()
-        elif kind == "settings":
-            self.push(SettingsScreen())
         elif kind == "cd":
-            self.push(MessageScreen("CD", "Kommer snart", "Läggs till när det finns en skiva."))
+            self.push(MessageScreen("CD", "Kommer snart", "Att spela skivan byggs härnäst."))
         elif kind == "bluetooth":
             if self.bt:
                 self.push(BluetoothScreen(self))
@@ -499,18 +456,12 @@ class App:
         playing = self.bt_playing()
         if playing and not self.mpv.props.get("idle-active"):
             self.mpv.stop()
-        boost = self.settings["bt_boost"] if playing else 0
+        boost = self.settings["bluetooth_boost"] if playing else 0
         if boost != self.volume.boost:
             self.volume.boost = boost
             self.volume.apply()
 
     # buttons, settings, the clock
-    def apply_settings(self):
-        self.backlight = self.settings["brightness"]
-        if self.volume.level > self.settings["volume_cap"]:
-            self.volume.set(self.settings["volume_cap"], self.settings["volume_cap"])
-            self.settings.set("volume", self.volume.level)
-
     def handle(self, ev, now):
         self.last_press = now
         if self.asleep:
