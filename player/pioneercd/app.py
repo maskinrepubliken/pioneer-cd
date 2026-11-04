@@ -210,8 +210,12 @@ class RadioScreen:
 
 class BluetoothScreen:
     """Blåtand: while it is on the screen, phones can find and pair with Pioneer CD
-    (App.poll_bt sees to it, however the screen is left). With
+    (App.poll_bt sees to it, however the screen is left). Opened by itself
+    when a phone starts to play, it is only Spelas nu, and not visible. With
     a phone connected it shows what plays there; up and down change track."""
+
+    def __init__(self, pairing=True):
+        self.pairing = pairing
 
     def view(self, app):
         st = app.bt.state if app.bt else {}
@@ -250,6 +254,7 @@ class App:
         self.mpv, self.volume, self.settings, self.bt = mpv, volume, settings, bt
         self.bt_polled = 0
         self.bt_shown = False       # whether the adapter is visible and pairable
+        self.bt_was_playing = False
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
@@ -296,7 +301,7 @@ class App:
         kind = row["id"]
         if kind == "playing":
             if self.bt_playing():
-                self.push(BluetoothScreen())
+                self.push(BluetoothScreen(pairing=False))
             else:
                 self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
         elif kind == "radio":
@@ -441,7 +446,8 @@ class App:
         if not self.bt:
             return
         # Visible only while Blåtand is on the screen: left, Home, or the screen asleep all end it.
-        show = isinstance(self.stack[-1], BluetoothScreen) and not self.asleep
+        top = self.stack[-1]
+        show = isinstance(top, BluetoothScreen) and top.pairing and not self.asleep
         if show != self.bt_shown:
             try:
                 self.bt.visible(show)
@@ -456,21 +462,31 @@ class App:
         except Exception as e:
             print("bluetooth:", repr(e), flush=True)
             return
-        playing = self.bt_playing()
+        was, playing = self.bt_was_playing, self.bt_playing()
+        self.bt_was_playing = playing
         if playing and not self.mpv.props.get("idle-active"):
             self.mpv.stop()
+        if playing and not was and not isinstance(self.stack[-1], BluetoothScreen):
+            # The phone started: show it, Spelas nu for Blåtand, and light the screen if it slept.
+            del self.stack[1:]
+            self.push(BluetoothScreen(pairing=False))
+            self.wake(now)
         boost = self.settings["bluetooth_boost"] if playing else 0
         if boost != self.volume.boost:
             self.volume.boost = boost
             self.volume.apply()
 
     # buttons, settings, the clock
-    def handle(self, ev, now):
+    def wake(self, now):
         self.last_press = now
+        self.asleep = False
+        self.backlight = self.settings["brightness"]
+
+    def handle(self, ev, now):
         if self.asleep:
-            self.asleep = False
-            self.backlight = self.settings["brightness"]
+            self.wake(now)
             return
+        self.last_press = now
         if ev in ("vol_up", "vol_down"):
             self.volume.set(self.volume.level + (1 if ev == "vol_up" else -1), self.settings["volume_cap"])
             self.settings.set("volume", self.volume.level)
