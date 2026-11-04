@@ -4,6 +4,7 @@ Reads with an API key (Jellyfin: Dashboard → API Keys) as one user: the one
 named in the config, or the first administrator. mpv fetches the audio
 itself, with the same key in its Authorization header.
 """
+import datetime
 import json
 import urllib.parse
 import urllib.request
@@ -69,8 +70,10 @@ class Jellyfin:
                            Limit=limit, Fields="ProductionYear")
 
     def mark_played(self, track):
-        """Counts a play: Jellyfin raises the track's play count and its date played."""
-        self.get(f"/UserPlayedItems/{track['Id']}", method="POST", userId=self.uid())
+        """Counts a play. Without datePlayed Jellyfin only sets Played, and a track
+        already played keeps its count and its date: with it, the count goes up."""
+        now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.get(f"/UserPlayedItems/{track['Id']}", method="POST", userId=self.uid(), datePlayed=now)
 
     def tracks(self, item):
         if item.get("Type") == "Playlist":
