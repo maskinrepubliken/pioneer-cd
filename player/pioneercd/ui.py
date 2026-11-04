@@ -51,14 +51,16 @@ def font(name, size):
 
 
 SANS = lambda: font("Sans-Regular", 10)
-SANS_BOLD = lambda: font("Sans-SemiBold", 10)
+ROW = lambda: font("Sans-Regular", 14)          # a menu row
+ROW_BOLD = lambda: font("Sans-SemiBold", 14)
+ROW_VALUE = lambda: font("Mono-Regular", 9)
 TITLE = lambda: font("Sans-SemiBold", 13)
 BIG = lambda: font("Sans-SemiBold", 16)
 SUB = lambda: font("Sans-Regular", 10)
 MONO = lambda: font("Mono-Regular", 8)
 MONO_BOLD = lambda: font("Mono-SemiBold", 8)
 
-LEGEND_H, ROW_H, VISIBLE = 13, 16, 4
+LEGEND_H, ROW_H, VISIBLE = 13, 21, 3
 BOTTOM = HEIGHT - 1 - LEGEND_H        # where the legend starts
 
 
@@ -112,17 +114,17 @@ def draw_list(d, v):
         num, label, value = rows[i]
         on = i == sel
         if on:
-            d.rounded_rectangle([4, y, right, y + ROW_H - 1], radius=ROW_H // 2, fill=OCHRE)
+            d.rounded_rectangle([3, y, right, y + ROW_H - 1], radius=ROW_H // 2, fill=OCHRE)
         x = 10
         fg = ON_OCHRE if on else INK
         if num is not None:
-            d.text((x, y + 4), str(num), font=MONO(), fill=fg if on else INK_FAINT)
-            x += 13
-        value = fit(d, value or "", MONO(), 80)
-        vw = d.textlength(value, font=MONO())
-        d.text((right - 6 - vw, y + 4), value, font=MONO(), fill=fg if on else INK_FAINT)
-        f = SANS_BOLD() if on else SANS()
-        d.text((x, y + 2), fit(d, label, f, right - 12 - x - vw), font=f, fill=fg)
+            d.text((x, y + 6), str(num), font=ROW_VALUE(), fill=fg if on else INK_FAINT)
+            x += 15
+        value = fit(d, value or "", ROW_VALUE(), 70)
+        vw = d.textlength(value, font=ROW_VALUE())
+        d.text((right - 7 - vw, y + 6), value, font=ROW_VALUE(), fill=fg if on else INK_FAINT)
+        f = ROW_BOLD() if on else ROW()
+        d.text((x, y + 1), fit(d, label, f, right - 12 - x - vw), font=f, fill=fg)
         y += ROW_H
     if len(rows) > VISIBLE:
         # Where in the list: a thin bar in the right edge, its thumb as long as what shows.
