@@ -1,0 +1,18 @@
+[Unit]
+Description=Pioneer CD: the player on the little screen
+Wants=network-online.target
+After=network-online.target sound.target
+
+[Service]
+User=pi
+Group=pi
+WorkingDirectory=@REPO@/player
+ExecStart=/usr/bin/python3 -m pioneercd
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=pioneer-cd
+RuntimeDirectory=pioneer-cd
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

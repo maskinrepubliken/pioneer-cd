@@ -1,0 +1,387 @@
+"""The screens and what the buttons do on them.
+
+The app is a stack of screens; the top one gets the joystick. Some buttons
+work the same everywhere: A and B set the volume, A and B together mute,
+holding the middle goes Home, and left goes back. After a while without a
+press the screen goes dark, and the first press only lights it again.
+"""
+import json
+import os
+import subprocess
+import threading
+import time
+
+from . import jellyfin, radio
+
+VOLUME_STEP = 5
+OVERLAY_SECONDS = 2
+
+
+def clock(seconds):
+    seconds = int(seconds or 0)
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+# ---------------------------------------------------------------- settings
+
+
+class Settings:
+    DEFAULTS = {"volume_cap": 80, "brightness": 100, "sleep_minutes": 10}
+    CHOICES = {
+        "volume_cap": [50, 60, 70, 80, 90, 100],
+        "brightness": [10, 30, 50, 70, 100],
+        "sleep_minutes": [0, 2, 5, 10, 30, 60],
+    }
+
+    def __init__(self, path):
+        self.path = path
+        self.values = dict(self.DEFAULTS)
+        try:
+            with open(path) as f:
+                self.values.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+
+    def __getitem__(self, name):
+        return self.values[name]
+
+    def step(self, name, delta):
+        choices = self.CHOICES[name]
+        i = min(range(len(choices)), key=lambda i: abs(choices[i] - self.values[name]))
+        self.values[name] = choices[max(0, min(len(choices) - 1, i + delta))]
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        # Written beside and renamed over, and synced: a power cut leaves the old file, not an empty one.
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.values, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.path)
+
+
+class Volume:
+    """The USB sound card's own volume, through amixer."""
+
+    def __init__(self, card="Device", control="Speaker"):
+        self.args = ["amixer", "-q", "-c", card, "sset", control]
+        self.level = 50
+        self.muted = False
+        try:
+            out = subprocess.run(["amixer", "-c", card, "sget", control], capture_output=True, text=True).stdout
+            self.level = int(out.split("[")[1].split("%")[0])
+        except (OSError, IndexError, ValueError):
+            pass
+
+    def set(self, level, cap):
+        self.level = max(0, min(cap, level))
+        self.muted = False
+        subprocess.run(self.args + [f"{self.level}%", "unmute"])
+
+    def toggle_mute(self):
+        self.muted = not self.muted
+        subprocess.run(self.args + ["mute" if self.muted else "unmute"])
+
+
+# ---------------------------------------------------------------- screens
+
+
+class ListScreen:
+    """A list to move through with up and down; the middle (or right) picks."""
+
+    def __init__(self, title, rows, pick=None, verb="välj", root=False):
+        self.title, self.rows, self.pick, self.verb, self.root = title, rows, pick, verb, root
+        self.sel = 0
+
+    def view(self, app):
+        legend = [("●", self.verb), ("▲▼", "bläddra")] if self.root else [("●", self.verb), ("◀", "tillbaka")]
+        n = len(self.rows)
+        return {"kind": "list", "status": (self.title.upper(), f"{self.sel + 1} AV {n}" if n else ""),
+                "rows": [(r.get("num"), r["label"], r.get("value", "")) for r in self.rows],
+                "selected": self.sel, "legend": legend}
+
+    def key(self, app, ev):
+        if ev in ("up", "down") and self.rows:
+            self.sel = max(0, min(len(self.rows) - 1, self.sel + (1 if ev == "down" else -1)))
+        elif ev in ("center", "right") and self.rows and self.pick:
+            self.pick(app, self.rows[self.sel])
+        elif ev == "left" and not self.root:
+            app.back()
+
+
+class MessageScreen:
+    def __init__(self, status, title, text="", error=False, retry=None):
+        self.status, self.title, self.text, self.error, self.retry = status, title, text, error, retry
+
+    def view(self, app):
+        legend = ([("●", "försök igen")] if self.retry else []) + [("◀", "tillbaka")]
+        return {"kind": "message", "status": (self.status, ""), "title": self.title, "text": self.text,
+                "error": self.error, "legend": legend}
+
+    def key(self, app, ev):
+        if ev == "left":
+            app.back()
+        elif ev == "center" and self.retry:
+            app.back()
+            self.retry(app)
+
+
+class PlayingScreen:
+    """Spelas nu: Jellyfin's queue in mpv. Up and down change track."""
+
+    def view(self, app):
+        p = app.mpv.props
+        q = app.queue
+        i = p.get("playlist-pos")
+        if not q or i is None or i < 0 or p.get("idle-active"):
+            return {"kind": "message", "status": ("JELLYFIN", ""), "title": "Inget spelas",
+                    "legend": [("◀", "tillbaka")]}
+        t = q[min(i, len(q) - 1)]
+        pos, dur = p.get("time-pos") or 0, p.get("duration") or jellyfin.seconds(t)
+        paused = bool(p.get("pause"))
+        return {"kind": "playing", "status": ("JELLYFIN", f"{i + 1} AV {len(q)}"),
+                "title": t.get("Name", ""), "subtitle": jellyfin.artist(t),
+                "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)), "paused": paused,
+                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista")]}
+
+    def key(self, app, ev):
+        if ev == "center":
+            app.mpv.toggle()
+        elif ev in ("up", "down"):
+            app.mpv.step(1 if ev == "down" else -1)
+        elif ev == "left":
+            app.back()
+
+
+class RadioScreen:
+    """Radio, spelar: a live channel. Up and down change channel; pausing
+    stops the stream, and playing again picks it up live."""
+
+    def view(self, app):
+        cid, name = app.channels[app.channel]
+        info = app.radio_info.get(cid, {})
+        title, when = info.get("now", (name, ""))
+        nxt = info.get("next")
+        stopped = app.mpv.props.get("idle-active")
+        return {"kind": "playing", "status": (f"RADIO · {name}", "DIREKT"), "title": title, "subtitle": when,
+                "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
+                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "lista")]}
+
+    def key(self, app, ev):
+        if ev == "center":
+            if app.mpv.props.get("idle-active"):
+                app.play_radio(app.channel)
+            else:
+                app.mpv.stop()
+        elif ev in ("up", "down"):
+            app.play_radio((app.channel + (1 if ev == "down" else -1)) % len(app.channels))
+        elif ev == "left":
+            app.back()
+
+
+class SettingsScreen:
+    ROWS = [("volume_cap", "Volymtak", "{} %"), ("brightness", "Ljusstyrka", "{} %"),
+            ("sleep_minutes", "Vila efter", "{} min")]
+
+    def __init__(self):
+        self.sel = 0
+        self.editing = False
+
+    def view(self, app):
+        def value(name, fmt):
+            v = app.settings[name]
+            return "aldrig" if name == "sleep_minutes" and v == 0 else fmt.format(v)
+        rows = [(None, label, ("‹ " + value(n, f) + " ›") if self.editing and i == self.sel else value(n, f))
+                for i, (n, label, f) in enumerate(self.ROWS)]
+        legend = [("●", "klar"), ("▲▼", "ändra")] if self.editing else [("●", "ändra"), ("◀", "tillbaka")]
+        return {"kind": "list", "status": ("INSTÄLLNINGAR", f"{self.sel + 1} AV {len(rows)}"),
+                "rows": rows, "selected": self.sel, "legend": legend}
+
+    def key(self, app, ev):
+        name = self.ROWS[self.sel][0]
+        if self.editing:
+            if ev in ("up", "down"):
+                app.settings.step(name, 1 if ev == "up" else -1)
+                app.apply_settings()
+            elif ev in ("center", "left"):
+                self.editing = False
+        elif ev in ("up", "down"):
+            self.sel = max(0, min(len(self.ROWS) - 1, self.sel + (1 if ev == "down" else -1)))
+        elif ev in ("center", "right"):
+            self.editing = True
+        elif ev == "left":
+            app.back()
+
+
+# ---------------------------------------------------------------- the app
+
+
+class App:
+    def __init__(self, config, mpv, volume, settings):
+        self.mpv, self.volume, self.settings = mpv, volume, settings
+        jf = config.get("jellyfin", {})
+        self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
+        chans = config.get("radio", {}).get("channels")
+        self.channels = [(c["id"], c["name"]) for c in chans] if chans else radio.CHANNELS
+        self.playing = None         # "radio", "jellyfin" or None
+        self.queue = []
+        self.channel = 0
+        self.radio_info = {}
+        self.radio_fetched = None
+        self.overlay_until = 0
+        self.last_press = time.monotonic()
+        self.asleep = False
+        self.backlight = settings["brightness"]
+        self.draw = lambda view: None   # set by main: shows a view at once (for "Laddar")
+        self.stack = [ListScreen("Källa", [], self.pick_source, root=True)]
+        self.refresh_home()
+
+    # navigation
+    def refresh_home(self):
+        rows = [{"label": "CD", "id": "cd"}, {"label": "Jellyfin", "id": "jellyfin"},
+                {"label": "Radio", "id": "radio"}, {"label": "Bluetooth", "id": "bluetooth"},
+                {"label": "Inställningar", "id": "settings"}]
+        if self.playing and not self.mpv.props.get("idle-active"):
+            rows.insert(0, {"label": "Spelas nu", "id": "playing",
+                            "value": self.channels[self.channel][1] if self.playing == "radio" else "Jellyfin"})
+        home = self.stack[0]
+        if [r["id"] for r in home.rows] != [r["id"] for r in rows]:
+            home.sel = 0
+        home.rows = rows
+
+    def push(self, screen):
+        self.stack.append(screen)
+
+    def back(self):
+        if len(self.stack) > 1:
+            self.stack.pop()
+
+    def pick_source(self, app, row):
+        kind = row["id"]
+        if kind == "playing":
+            self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
+        elif kind == "radio":
+            rows = [{"label": name, "index": i, "value": self.radio_info.get(cid, {}).get("now", ("", ""))[0]}
+                    for i, (cid, name) in enumerate(self.channels)]
+            self.push(ListScreen("Radio", rows, lambda app, r: (app.play_radio(r["index"]), app.push(RadioScreen())),
+                                 verb="spela"))
+        elif kind == "jellyfin":
+            self.open_jellyfin()
+        elif kind == "settings":
+            self.push(SettingsScreen())
+        elif kind == "cd":
+            self.push(MessageScreen("CD", "Kommer snart", "Läggs till när det finns en skiva."))
+        elif kind == "bluetooth":
+            self.push(MessageScreen("BLUETOOTH", "Kommer snart"))
+
+    # jellyfin
+    def load(self, status, fetch, then):
+        """Shows Laddar, fetches, and passes the answer on; an error gets its own screen."""
+        self.draw({"kind": "message", "status": (status, ""), "title": "Laddar"})
+        try:
+            result = fetch()
+        except Exception as e:  # network, HTTP or JSON: all mean the same to the listener
+            print("jellyfin:", repr(e), flush=True)
+            self.push(MessageScreen(status, "Fel: servern svarar inte", "", error=True,
+                                    retry=lambda app: app.load(status, fetch, then)))
+            return
+        then(result)
+
+    def open_jellyfin(self):
+        if not self.jf:
+            self.push(MessageScreen("JELLYFIN", "Inte inställd", "API-nyckeln saknas i config.toml."))
+            return
+        rows = [{"label": "Album", "id": "albums"}, {"label": "Artister", "id": "artists"},
+                {"label": "Spellistor", "id": "playlists"}]
+        self.push(ListScreen("Jellyfin", rows, lambda app, r: app.open_library(r["id"])))
+
+    def open_library(self, kind):
+        if kind == "albums":
+            self.load("ALBUM", self.jf.albums, lambda items: self.push(self.album_list("Album", items)))
+        elif kind == "artists":
+            self.load("ARTISTER", self.jf.artists, lambda items: self.push(ListScreen(
+                "Artister", [{"label": a["Name"], "item": a} for a in items],
+                lambda app, r: app.load("ARTIST", lambda: app.jf.albums(r["item"]["Id"]),
+                                        lambda albums: app.push(app.album_list(r["label"], albums))))))
+        elif kind == "playlists":
+            self.load("SPELLISTOR", self.jf.playlists, lambda items: self.push(ListScreen(
+                "Spellistor", [{"label": p["Name"], "item": p} for p in items], self.open_tracks)))
+
+    def album_list(self, title, albums):
+        rows = [{"label": a["Name"], "value": str(a.get("ProductionYear") or ""), "item": a} for a in albums]
+        return ListScreen(title, rows, self.open_tracks, verb="öppna")
+
+    def open_tracks(self, app, row):
+        item = row["item"]
+
+        def show(tracks):
+            rows = [{"num": t.get("IndexNumber") or i + 1, "label": t.get("Name", ""),
+                     "value": clock(jellyfin.seconds(t)), "index": i} for i, t in enumerate(tracks)]
+            self.push(ListScreen(item["Name"], rows, lambda app, r: app.play_tracks(tracks, r["index"]),
+                                 verb="spela"))
+        self.load(item["Name"].upper(), lambda: self.jf.tracks(item), show)
+
+    def play_tracks(self, tracks, start):
+        self.queue = tracks
+        self.playing = "jellyfin"
+        self.mpv.play([self.jf.stream_url(t) for t in tracks], start,
+                      headers=[f"Authorization: {self.jf.auth}"])
+        self.push(PlayingScreen())
+
+    # radio
+    def play_radio(self, index):
+        self.channel = index
+        self.playing = "radio"
+        self.queue = []
+        self.mpv.play([radio.stream_url(self.channels[index][0])])
+        self.radio_fetched = None       # fetch what is on now
+
+    def fetch_radio(self):
+        def run():
+            for cid, _ in self.channels:
+                try:
+                    self.radio_info[cid] = radio.now_next(cid)
+                except Exception as e:
+                    print("radio:", cid, repr(e), flush=True)
+        threading.Thread(target=run, daemon=True).start()
+
+    # buttons, settings, the clock
+    def apply_settings(self):
+        self.backlight = self.settings["brightness"]
+        if self.volume.level > self.settings["volume_cap"]:
+            self.volume.set(self.settings["volume_cap"], self.settings["volume_cap"])
+
+    def handle(self, ev, now):
+        self.last_press = now
+        if self.asleep:
+            self.asleep = False
+            self.backlight = self.settings["brightness"]
+            return
+        if ev in ("vol_up", "vol_down"):
+            delta = VOLUME_STEP if ev == "vol_up" else -VOLUME_STEP
+            self.volume.set(self.volume.level + delta, self.settings["volume_cap"])
+            self.overlay_until = now + OVERLAY_SECONDS
+        elif ev == "mute":
+            self.volume.toggle_mute()
+            self.overlay_until = now + OVERLAY_SECONDS
+        elif ev == "home":
+            del self.stack[1:]
+        else:
+            self.stack[-1].key(self, ev)
+
+    def tick(self, now):
+        minutes = self.settings["sleep_minutes"]
+        if minutes and not self.asleep and now - self.last_press > minutes * 60:
+            self.asleep = True
+            self.backlight = 0
+        if self.radio_fetched is None or now - self.radio_fetched > 60:
+            self.radio_fetched = now
+            self.fetch_radio()
+        self.refresh_home()
+
+    def view(self, now):
+        if self.asleep:
+            return {"kind": "off"}
+        v = self.stack[-1].view(self)
+        if now < self.overlay_until:
+            v["volume"] = {"level": self.volume.level, "muted": self.volume.muted}
+        return v
