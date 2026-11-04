@@ -209,11 +209,9 @@ class RadioScreen:
 
 
 class BluetoothScreen:
-    """Blåtand: while it is open, phones can find and pair with Pioneer CD. With
+    """Blåtand: while it is on the screen, phones can find and pair with Pioneer CD
+    (App.poll_bt sees to it, however the screen is left). With
     a phone connected it shows what plays there; up and down change track."""
-
-    def __init__(self, app):
-        app.bt_visible(True)
 
     def view(self, app):
         st = app.bt.state if app.bt else {}
@@ -241,7 +239,6 @@ class BluetoothScreen:
         elif ev in ("up", "down") and st:
             app.bt_control("Next" if ev == "down" else "Previous")
         elif ev == "left":
-            app.bt_visible(False)
             app.back()
 
 
@@ -252,6 +249,7 @@ class App:
     def __init__(self, config, mpv, volume, settings, bt=None):
         self.mpv, self.volume, self.settings, self.bt = mpv, volume, settings, bt
         self.bt_polled = 0
+        self.bt_shown = False       # whether the adapter is visible and pairable
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
@@ -298,7 +296,7 @@ class App:
         kind = row["id"]
         if kind == "playing":
             if self.bt_playing():
-                self.push(BluetoothScreen(self))
+                self.push(BluetoothScreen())
             else:
                 self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
         elif kind == "radio":
@@ -312,7 +310,7 @@ class App:
             self.push(MessageScreen("CD", "Kommer snart", "Att spela skivan byggs härnäst."))
         elif kind == "bluetooth":
             if self.bt:
-                self.push(BluetoothScreen(self))
+                self.push(BluetoothScreen())
             else:
                 self.push(MessageScreen("BLÅTAND", "Fel: Bluetooth saknas", error=True))
 
@@ -424,11 +422,6 @@ class App:
 
     # bluetooth: one source at a time, so a phone that starts playing stops
     # mpv, and mpv starting pauses the phone.
-    def bt_visible(self, on):
-        try:
-            self.bt and self.bt.visible(on)
-        except Exception as e:
-            print("bluetooth:", repr(e), flush=True)
 
     def bt_control(self, method):
         try:
@@ -445,7 +438,17 @@ class App:
             self.bt_control("Pause")
 
     def poll_bt(self, now):
-        if not self.bt or now - self.bt_polled < 1:
+        if not self.bt:
+            return
+        # Visible only while Blåtand is on the screen: left, Home, or the screen asleep all end it.
+        show = isinstance(self.stack[-1], BluetoothScreen) and not self.asleep
+        if show != self.bt_shown:
+            try:
+                self.bt.visible(show)
+                self.bt_shown = show
+            except Exception as e:
+                print("bluetooth:", repr(e), flush=True)
+        if now - self.bt_polled < 1:
             return
         self.bt_polled = now
         try:
