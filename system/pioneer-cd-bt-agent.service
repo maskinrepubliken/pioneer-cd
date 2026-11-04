@@ -1,0 +1,13 @@
+[Unit]
+Description=Pioneer CD: accepts Bluetooth pairing without a code
+# Only while the Blåtand screen is open is the adapter visible and pairable.
+After=bluetooth.service
+Requires=bluetooth.service
+
+[Service]
+ExecStart=/usr/bin/bt-agent --capability=NoInputNoOutput
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=bluetooth.target

@@ -2,7 +2,7 @@
 
 A music player for a Raspberry Pi 4: CDs from a USB drive, Jellyfin over the network and Bluetooth
 from a phone, played through a small amplifier and controlled from a tiny colour screen with a
-joystick. Radio and Jellyfin play; CD and Bluetooth are next.
+joystick. Radio, Jellyfin and Bluetooth play; CD is next.
 
 ## Part of the pioneer series
 
@@ -56,7 +56,11 @@ memory; these were found on the panel itself and differ from Adafruit's library 
 `player/` is a Python service that owns the screen and the buttons and plays through mpv:
 Sveriges Radio live, with what is on now and next from SR's API, and Jellyfin's albums,
 artists and playlists (called Bibliotek on the screen), with suggestions: most played,
-recently played and recently added. Half a track, or four minutes, counts as a play in Jellyfin. Install it on the Pi:
+recently played and recently added. Half a track, or four minutes, counts as a play in Jellyfin.
+Bluetooth (Blåtand on the screen) makes it a speaker for a phone: BlueALSA receives and plays
+the sound, and while the Blåtand screen is open the Pi is visible as "Pioneer CD" and pairs
+without a code. A phone paired once is trusted and reconnects by itself; one source plays at a
+time, so the phone starting stops the radio, and the radio starting pauses the phone. Install it on the Pi:
 
 ```sh
 git clone https://github.com/maskinrepubliken/pioneer-cd.git

@@ -215,6 +215,40 @@ class RadioScreen:
             app.back()
 
 
+class BluetoothScreen:
+    """Blåtand: while it is open, phones can find and pair with Pioneer CD. With
+    a phone connected it shows what plays there; up and down change track."""
+
+    def __init__(self, app):
+        app.bt_visible(True)
+
+    def view(self, app):
+        st = app.bt.state if app.bt else {}
+        if not st:
+            return {"kind": "message", "status": ("BLÅTAND", "SYNLIG"), "title": "Väntar på telefon",
+                    "text": "Anslut till Pioneer CD.", "legend": [("◀", "stäng av")]}
+        if not st.get("title"):
+            return {"kind": "message", "status": ("BLÅTAND", st["device"].upper()), "title": "Ansluten",
+                    "text": "Spela något på telefonen.", "legend": [("◀", "tillbaka")]}
+        paused = st.get("status") != "playing"
+        dur, pos = st.get("duration") or 0, st.get("position") or 0
+        return {"kind": "playing", "status": ("BLÅTAND", st["device"].upper()),
+                "title": st["title"], "subtitle": st.get("artist", ""),
+                "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)) if dur else None,
+                "paused": paused,
+                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "tillbaka")]}
+
+    def key(self, app, ev):
+        st = app.bt.state if app.bt else {}
+        if ev == "center" and st:
+            app.bt_control("Pause" if st.get("status") == "playing" else "Play")
+        elif ev in ("up", "down") and st:
+            app.bt_control("Next" if ev == "down" else "Previous")
+        elif ev == "left":
+            app.bt_visible(False)
+            app.back()
+
+
 class SettingsScreen:
     ROWS = [("volume_cap", "Volymtak", "{}"), ("brightness", "Ljusstyrka", "{} %"),
             ("sleep_minutes", "Vila efter", "{} min")]
@@ -253,8 +287,9 @@ class SettingsScreen:
 
 
 class App:
-    def __init__(self, config, mpv, volume, settings):
-        self.mpv, self.volume, self.settings = mpv, volume, settings
+    def __init__(self, config, mpv, volume, settings, bt=None):
+        self.mpv, self.volume, self.settings, self.bt = mpv, volume, settings, bt
+        self.bt_polled = 0
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
@@ -276,9 +311,11 @@ class App:
     # navigation
     def refresh_home(self):
         rows = [{"label": "CD", "id": "cd"}, {"label": "Bibliotek", "id": "jellyfin"},
-                {"label": "Radio", "id": "radio"}, {"label": "Bluetooth", "id": "bluetooth"},
+                {"label": "Radio", "id": "radio"}, {"label": "Blåtand", "id": "bluetooth"},
                 {"label": "Inställningar", "id": "settings"}]
-        if self.playing and not self.mpv.props.get("idle-active"):
+        if self.bt and self.bt.state.get("status") == "playing":
+            rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
+        elif self.playing and not self.mpv.props.get("idle-active"):
             rows.insert(0, {"label": "Spelas nu", "id": "playing",
                             "value": self.channels[self.channel][1] if self.playing == "radio" else "Bibliotek"})
         home = self.stack[0]
@@ -296,7 +333,10 @@ class App:
     def pick_source(self, app, row):
         kind = row["id"]
         if kind == "playing":
-            self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
+            if self.bt and self.bt.state.get("status") == "playing":
+                self.push(BluetoothScreen(self))
+            else:
+                self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
         elif kind == "radio":
             rows = [{"label": name, "index": i, "value": self.radio_info.get(cid, {}).get("now", ("", ""))[0]}
                     for i, (cid, name) in enumerate(self.channels)]
@@ -309,7 +349,10 @@ class App:
         elif kind == "cd":
             self.push(MessageScreen("CD", "Kommer snart", "Läggs till när det finns en skiva."))
         elif kind == "bluetooth":
-            self.push(MessageScreen("BLUETOOTH", "Kommer snart"))
+            if self.bt:
+                self.push(BluetoothScreen(self))
+            else:
+                self.push(MessageScreen("BLÅTAND", "Fel: Bluetooth saknas", error=True))
 
     # jellyfin
     def load(self, status, fetch, then):
@@ -374,6 +417,7 @@ class App:
                   lambda tracks: self.push(self.track_list(item["Name"], tracks, album)))
 
     def play_tracks(self, tracks, start):
+        self.pause_phone()
         self.queue = tracks
         self.counted = set()
         self.playing = "jellyfin"
@@ -400,6 +444,7 @@ class App:
 
     # radio
     def play_radio(self, index):
+        self.pause_phone()
         self.channel = index
         self.playing = "radio"
         self.queue = []
@@ -414,6 +459,36 @@ class App:
                 except Exception as e:
                     print("radio:", cid, repr(e), flush=True)
         threading.Thread(target=run, daemon=True).start()
+
+    # bluetooth: one source at a time, so a phone that starts playing stops
+    # mpv, and mpv starting pauses the phone.
+    def bt_visible(self, on):
+        try:
+            self.bt and self.bt.visible(on)
+        except Exception as e:
+            print("bluetooth:", repr(e), flush=True)
+
+    def bt_control(self, method):
+        try:
+            self.bt.control(method)
+        except Exception as e:
+            print("bluetooth:", repr(e), flush=True)
+
+    def pause_phone(self):
+        if self.bt and self.bt.state.get("status") == "playing":
+            self.bt_control("Pause")
+
+    def poll_bt(self, now):
+        if not self.bt or now - self.bt_polled < 1:
+            return
+        self.bt_polled = now
+        try:
+            st = self.bt.poll()
+        except Exception as e:
+            print("bluetooth:", repr(e), flush=True)
+            return
+        if st.get("status") == "playing" and not self.mpv.props.get("idle-active"):
+            self.mpv.stop()
 
     # buttons, settings, the clock
     def apply_settings(self):
@@ -449,6 +524,7 @@ class App:
             self.radio_fetched = now
             self.fetch_radio()
         self.count_play()
+        self.poll_bt(now)
         self.refresh_home()
 
     def view(self, now):

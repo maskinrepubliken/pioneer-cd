@@ -31,7 +31,14 @@ def main():
     settings = Settings(os.path.join(state, "settings.json"))
     board.backlight(settings["brightness"])
     volume = Volume(min(settings["volume"], settings["volume_cap"]))
-    app = App(config, Mpv(os.path.join(run, "mpv.sock")), volume, settings)
+    try:
+        from .bluetooth import Bluetooth
+        bt = Bluetooth()
+        bt.visible(False)
+    except Exception as e:          # no adapter, or BlueZ not running: Blåtand says so
+        print("bluetooth:", repr(e), flush=True)
+        bt = None
+    app = App(config, Mpv(os.path.join(run, "mpv.sock")), volume, settings, bt)
     app.draw = lambda view: board.show(ui.render(view))
     keys = Keys()
     shown, backlight = None, settings["brightness"]
