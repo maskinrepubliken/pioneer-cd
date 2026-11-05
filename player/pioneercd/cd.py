@@ -24,19 +24,21 @@ USER_AGENT = "PioneerCD/1.0 ( https://github.com/maskinrepubliken/pioneer-cd )"
 
 DEVICE = "/dev/sr0"
 CDROM_DRIVE_STATUS, CDROM_DISC_STATUS = 0x5326, 0x5327
-CDS_DISC_OK = 4
+CDS_NO_DISC, CDS_TRAY_OPEN, CDS_DISC_OK = 1, 2, 4
 CDS_AUDIO, CDS_MIXED = 100, 105
 
 
 def disc(device=DEVICE):
-    """"audio" for a disc with music on it, "data" for another disc, None for none (or no drive)."""
+    """"audio" for a disc with music on it, "data" for another disc, "empty" for the tray
+    shut with no disc in, "open" for the tray open, None while the drive is not ready (or none)."""
     try:
         fd = os.open(device, os.O_RDONLY | os.O_NONBLOCK)
     except OSError:
         return None
     try:
-        if fcntl.ioctl(fd, CDROM_DRIVE_STATUS, 0) != CDS_DISC_OK:
-            return None
+        status = fcntl.ioctl(fd, CDROM_DRIVE_STATUS, 0)
+        if status != CDS_DISC_OK:
+            return {CDS_NO_DISC: "empty", CDS_TRAY_OPEN: "open"}.get(status)
         return "audio" if fcntl.ioctl(fd, CDROM_DISC_STATUS, 0) in (CDS_AUDIO, CDS_MIXED) else "data"
     except OSError:
         return None

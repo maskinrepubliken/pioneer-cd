@@ -99,8 +99,9 @@ The player reads the disc's table of contents (libdiscid), plays the disc with m
 `/var/lib/pioneer-cd/cd/<disc id>.json`, which can be written by hand; MusicBrainz, by the
 disc's id, the tracks' lengths or the barcode (what it says is kept in that file); the disc's
 own CD-Text; or Spår 1, 2, ….
-A disc put in plays at once if it is another than the last one; the same one again opens Home
-with CD chosen.
+A disc put in plays at once: another than the last one, or the same one taken out and put back
+(the drive says it was shut empty in between). Opening and shutting the tray with the disc in
+does nothing.
 
 ## Sound
 

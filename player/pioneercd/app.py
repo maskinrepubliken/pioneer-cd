@@ -385,6 +385,7 @@ class App:
         self.cd_error = False       # the disc could not be read
         self.disc_first = True      # the first word from cd.watch() is the disc in at start, not put in
         self.disc_put_in = None     # a disc just put in and read, for tick() to act on
+        self.disc_emptied = False   # the tray was shut with no disc since the last disc
         self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
@@ -712,6 +713,8 @@ class App:
         self.cd_album = None
         self.cd_error = False
         first, self.disc_first = self.disc_first, False
+        if disc == "empty":
+            self.disc_emptied = True
         if disc == "audio":
             def run():
                 try:
@@ -720,10 +723,12 @@ class App:
                     print("cd:", repr(e), flush=True)
                     self.cd_error = True
                     return
-                if first:
-                    self.last_disc = self.cd_album["discid"]
-                else:
-                    self.disc_put_in = self.cd_album["discid"]
+                discid = self.cd_album["discid"]
+                # Another disc plays at once, and so does the same one taken out and put back
+                # (the tray shut empty in between); the tray only opened and shut, nothing happens.
+                if not first and (discid != self.last_disc or self.disc_emptied):
+                    self.disc_put_in = discid
+                self.last_disc, self.disc_emptied = discid, False
             threading.Thread(target=run, daemon=True).start()
         else:
             self.disc_out = True            # for tick(): from the main loop, not this thread
@@ -741,18 +746,11 @@ class App:
                 break
 
     def disc_in(self, now):
-        """A disc put in plays at once if it is another than the last one; the
-        same one again opens Home with CD chosen. The screen lights either way."""
-        discid, self.disc_put_in = self.disc_put_in, None
+        """A disc put in plays from its first track, with the screen lit."""
+        self.disc_put_in = None
         self.wake(now)
         del self.stack[1:]
-        if discid != self.last_disc:
-            self.last_disc = discid
-            self.play_cd(0)
-        else:
-            self.refresh_home()
-            home = self.stack[0]
-            home.sel = next((i for i, r in enumerate(home.rows) if r["id"] == "cd"), 0)
+        self.play_cd(0)
 
     def cd_track(self):
         """The track playing, by where in the disc the time is: (index, track)."""
