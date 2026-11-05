@@ -26,6 +26,7 @@ user = ""
 # Lugna Favoriter, Bandit Rock, Yoga Chill, Nightride FM, Sensual Lounge and
 # Radio Art Tantra (pioneercd/radio.py).
 # [radio]
+# start = "P1"          # the channel Radio starts on, by name
 # channels = [
 #   { id = 132, name = "P1" },
 #   { id = 701, name = "P4 Stockholm" },

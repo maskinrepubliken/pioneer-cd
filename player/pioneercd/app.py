@@ -193,7 +193,7 @@ class PlayingScreen:
 
 
 class RadioScreen:
-    """Radio: a live channel, P1 first. It never pauses: up and down change
+    """Radio: a live channel, P1 to begin with. It never pauses: up and down change
     channel, and the middle lists the channels to pick one from."""
 
     def view(self, app):
@@ -325,6 +325,8 @@ class App:
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
         self.channels = chans or radio.CHANNELS
+        start = config.get("radio", {}).get("start", radio.START)
+        self.radio_start = next((i for i, ch in enumerate(self.channels) if ch["name"] == start), 0)
         self.playing = None         # "radio", "jellyfin" or None
         self.queue = []
         self.counted = set()        # queue positions already counted as played in Jellyfin
@@ -380,9 +382,9 @@ class App:
             else:
                 self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
         elif kind == "radio":
-            # Straight to the first channel (P1); up and down change channel from there.
+            # Straight to the start channel (P1); up and down change channel from there.
             if self.playing != "radio" or self.mpv.props.get("idle-active"):
-                self.play_radio(0)
+                self.play_radio(self.radio_start)
             self.push(RadioScreen())
         elif kind == "jellyfin":
             self.open_jellyfin()

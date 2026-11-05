@@ -8,12 +8,14 @@ import re
 import urllib.request
 
 # An SR channel by its id (api.sr.se/api/v2/channels), another station by
-# its stream. P4 is regional: 206 is P4 Sjuhärad. The config can replace the list.
+# its stream. P4 is regional: 206 is P4 Sjuhärad. The radio starts on START,
+# fourth in the list; the config can replace both.
+START = "P1"
 CHANNELS = [
-    {"id": 132, "name": "P1"},
-    {"id": 163, "name": "P2"},
-    {"id": 164, "name": "P3"},
     {"id": 206, "name": "P4 Sjuhärad"},
+    {"id": 164, "name": "P3"},
+    {"id": 163, "name": "P2"},
+    {"id": 132, "name": "P1"},
     {"id": 2755, "name": "Radioapans knattekanal"},
     {"name": "Lugna Favoriter", "url": "https://fm03-ice.stream.khz.se/fm03_mp3"},
     {"name": "Bandit Rock", "url": "https://fm02-ice.stream.khz.se/fm02_mp3"},
