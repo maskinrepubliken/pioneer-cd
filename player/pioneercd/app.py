@@ -193,8 +193,8 @@ class PlayingScreen:
 
 
 class RadioScreen:
-    """Radio: a live channel, P1 first. Up and down change channel; pausing
-    stops the stream, and playing again picks it up live."""
+    """Radio: a live channel, P1 first. It never pauses: up and down change
+    channel, and the middle lists the channels to pick one from."""
 
     def view(self, app):
         ch = app.channels[app.channel]
@@ -207,19 +207,13 @@ class RadioScreen:
             song = app.mpv.props.get("media-title") or ""
             named = song and song not in (ch["url"], ch["url"].rsplit("/", 1)[-1])   # before that, the file
             title, when, nxt = (song if named else name), "", None
-        stopped = app.mpv.props.get("idle-active")
         return {"kind": "playing", "title": title, "subtitle": f"{name} · {when}" if when else name,
-                "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
-                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "hem"), ("▶", "val")]}
+                "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "",
+                "legend": [("●", "kanaler"), ("▲▼", "kanal"), ("◀", "hem"), ("▶", "val")]}
 
     def key(self, app, ev):
         if ev == "center":
-            if app.mpv.props.get("idle-active"):
-                app.notify("UPPSPELNING", "Spelar")
-                app.play_radio(app.channel)
-            else:
-                app.notify("UPPSPELNING", "Pausad")
-                app.mpv.stop()
+            app.push(app.channel_list())
         elif ev == "right":
             app.push(OptionsScreen("radio"))
         elif ev in ("up", "down"):
@@ -611,6 +605,21 @@ class App:
             threading.Thread(target=run, daemon=True).start()
 
     # radio
+    def channel_list(self):
+        """All the channels, with what is on each SR channel; picking one plays it and goes back."""
+        rows = []
+        for i, ch in enumerate(self.channels):
+            now = self.radio_info.get(ch.get("id"), {}).get("now", ("", ""))[0] if "id" in ch else ""
+            rows.append({"label": ch["name"], "value": now, "index": i})
+
+        def pick(app, row):
+            if row["index"] != app.channel or app.mpv.props.get("idle-active"):
+                app.play_radio(row["index"])
+            app.back()
+        screen = ListScreen("Kanaler", rows, pick, verb="spela")
+        screen.sel = self.channel
+        return screen
+
     def play_radio(self, index):
         self.pause_phone()
         self.channel = index

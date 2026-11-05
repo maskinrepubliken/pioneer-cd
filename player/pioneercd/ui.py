@@ -237,20 +237,38 @@ def draw_playing(d, v):
 
 
 def draw_notice(d, n):
-    """A small label over one big word or number, in a panel over the screen."""
-    x0, y0, x1, y1 = 30, 17, WIDTH - 31, 61
-    d.rounded_rectangle([x0, y0, x1, y1], radius=9, fill=PAPER_RAISED, outline=LINE_STRONG)
+    """A small label over one big word or number, in a panel over all above the legend."""
+    x0, y0, x1, y1 = 2, 2, WIDTH - 3, BOTTOM - 2
+    d.rounded_rectangle([x0, y0, x1, y1], radius=4, fill=PAPER_RAISED, outline=LINE_STRONG)
     label = n["label"]
-    d.text(((WIDTH - d.textlength(label, font=MONO())) / 2, y0 + 5), label, font=MONO(), fill=INK_FAINT)
+    lf = font("Mono-Regular", 10)
+    d.text(((WIDTH - d.textlength(label, font=lf)) / 2, y0 + 4), label, font=lf, fill=INK_FAINT)
     value = n["value"]
-    f = font("Mono-SemiBold", 22) if n.get("mono") else TITLE()
+    room = x1 - x0 - 10 - (26 if n.get("star") else 0)
+    # As big as fits: numbers in mono, words in the interface face.
+    sizes = ((font("Mono-SemiBold", s) for s in (34, 28, 22, 18)) if n.get("mono")
+             else (font("Sans-SemiBold", s) for s in (28, 24, 20, 16, 13)))
+    for f in sizes:
+        box = d.textbbox((0, 0), value, font=f)
+        if box[2] - box[0] <= room:
+            break
+    else:
+        if " " in value and not n.get("star"):     # a long name: two lines, split near the middle
+            f = font("Sans-SemiBold", 18)
+            words = value.split(" ")
+            cut = min(range(1, len(words)), key=lambda i: abs(len(" ".join(words[:i])) - len(value) / 2))
+            for k, line in enumerate((" ".join(words[:cut]), " ".join(words[cut:]))):
+                line = fit(d, line, f, room)
+                d.text((WIDTH / 2, y0 + 28 + k * 21), line, font=f, fill=INK, anchor="mm")
+            return
+    value = fit(d, value, f, room)
     box = d.textbbox((0, 0), value, font=f)
-    w = box[2] - box[0] + (18 if n.get("star") else 0)
-    x = (WIDTH - w) / 2
+    w = box[2] - box[0] + (26 if n.get("star") else 0)
+    x, mid = (WIDTH - w) / 2, y0 + 38
     if n.get("star"):
-        star(d, x + 7, y0 + 27, 8, INK)
-        x += 18
-    d.text((x - box[0], y0 + 27 - (box[3] - box[1]) / 2 - box[1]), value, font=f, fill=INK)
+        star(d, x + 10, mid, 11, INK)
+        x += 26
+    d.text((x - box[0], mid - (box[3] - box[1]) / 2 - box[1]), value, font=f, fill=INK)
 
 
 def draw_start(d):
