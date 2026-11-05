@@ -322,8 +322,8 @@ class CdPlayingScreen:
 
 
 class OptionsScreen:
-    """Val, right from Spelas nu: first Gilla, which saves what plays to the
-    inbox, then Blanda and Upprepa for the library's queue, and for every
+    """Val, right from Spelas nu: first Minns, which keeps what plays in the
+    inbox (Glöm, once it is there, takes it out), then Blanda and Upprepa for the library's queue, and for every
     source Sovtimer and Vila. The middle changes a row; a few
     seconds without a press and it goes back to Spelas nu by itself."""
     REPEAT = {"no": "av", "track": "låten", "list": "listan"}
@@ -333,7 +333,7 @@ class OptionsScreen:
         self.sel = 0
 
     def rows(self, app):
-        rows = [("like", "Gilla", "sparad" if app.liked() else "")]
+        rows = [("like", "Glöm" if app.liked() else "Minns", "")]
         if self.source == "jellyfin":
             rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
                      ("repeat", "Upprepa", self.REPEAT[app.repeat])]
@@ -354,7 +354,7 @@ class OptionsScreen:
         elif ev in ("center", "right"):
             what = rows[self.sel][0]
             if what == "like":
-                app.like()
+                app.forget() if app.liked() else app.like()
             elif what == "shuffle":
                 app.toggle_shuffle()
             elif what == "repeat":
@@ -529,7 +529,7 @@ class App:
                       headers=[f"Authorization: {self.jf.auth}"])
         self.push(PlayingScreen())
 
-    # Val: Gilla, shuffle, repeat, the sleep timer
+    # Val: Minns, shuffle, repeat, the sleep timer
     def now_playing(self):
         """All there is to say about what plays now, for the inbox: {} when nothing does."""
         p = self.mpv.props
@@ -581,7 +581,7 @@ class App:
         """Saves what plays, with when, as one JSON line in the inbox."""
         item = self.now_playing()
         if not item:
-            self.notify("GILLA", "Inget spelas")
+            self.notify("INKORG", "Inget spelas")
             return
         item = {"liked": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
                 **{k: v for k, v in item.items() if v not in (None, "")}}
@@ -591,7 +591,24 @@ class App:
             f.flush()
             os.fsync(f.fileno())
         self.likes.add(self._like_key(item))
-        self.notify("GILLAD", "Sparad", star=True)
+        self.notify("INKORG", "Minns", star="filled")
+
+    def forget(self):
+        """Takes what plays out of the inbox again: the file is written beside and renamed over."""
+        key = self._like_key(self.now_playing())
+        try:
+            with open(self.inbox) as f:
+                lines = f.readlines()
+        except OSError:
+            lines = []
+        keep = [line for line in lines if line.strip() and self._like_key(json.loads(line)) != key]
+        with open(self.inbox + ".tmp", "w") as f:
+            f.writelines(keep)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(self.inbox + ".tmp", self.inbox)
+        self.likes.discard(key)
+        self.notify("INKORG", "Glöms", star="empty")
     def reorder(self, tracks):
         """Puts tracks in mpv's playlist around the track that plays, which plays on."""
         i = self.mpv.props.get("playlist-pos")

@@ -75,8 +75,9 @@ Then put Jellyfin's address and an API key (Jellyfin: Dashboard → API Keys) in
 Radio starts P1 at once. The buttons: up and down move in lists, and change track or channel while something plays
 (held, they jump a letter at a time); the middle picks, plays and pauses, and held goes Home;
 left goes back, everywhere. A and B set the volume, both together mute. After ten minutes
-without a press the screen goes dark; the first press only lights it. Right on Spelas nu opens Val: first Gilla (a star), which saves what plays, with all that is
-known about it and the date, as a line of JSON in the inbox, `/var/lib/pioneer-cd/inkorg.jsonl`; then Blanda
+without a press the screen goes dark; the first press only lights it. Right on Spelas nu opens Val: first Minns (a star), which keeps what plays, with all that is
+known about it and the date, as a line of JSON in the inbox, `/var/lib/pioneer-cd/inkorg.jsonl`
+(Glöm, once it is there, takes it out again); then Blanda
 and Upprepa (av, låten, listan) for the library, and for every source Sovtimer (10, 20, 30, 50
 minutes or an hour; its last half minute fades out, then the music stops and the screen sleeps)
 and Vila, which darkens the screen at once.
