@@ -114,6 +114,16 @@ def marquee(img, xy, width, text, f, fill, slot, now, anchor="la"):
     img.paste(layer, (int(x), y), layer)
 
 
+def star(d, cx, cy, r, fill):
+    """A five-pointed star, centred at cx, cy, its points r from the centre."""
+    pts = []
+    for i in range(10):
+        a = math.pi / 2 + i * math.pi / 5
+        rr = r if i % 2 == 0 else r * 0.45
+        pts.append((cx + rr * math.cos(a), cy - rr * math.sin(a)))
+    d.polygon(pts, fill=fill)
+
+
 def glyph(d, ch, x, y):
     """A joystick sign drawn as a shape (Plex has none of them): ● ▲ ▼ ◀ ▶,
     in a 6×6 box at x, y. Returns its width."""
@@ -159,7 +169,10 @@ def draw_list(d, v):
             d.rounded_rectangle([1, y, right, y + ROW_H - 1], radius=3, fill=OCHRE)
         x = 6
         fg = ON_OCHRE if on else INK
-        if num is not None:
+        if num == "★":
+            star(d, x + 6, mid, 6.5, fg)
+            x += 17
+        elif num is not None:
             d.text((x, mid), str(num), font=ROW_VALUE(), fill=fg if on else INK_FAINT, anchor="lm")
             x += 17
         value = fit(d, value or "", ROW_VALUE(), 64)
@@ -232,8 +245,12 @@ def draw_notice(d, n):
     value = n["value"]
     f = font("Mono-SemiBold", 22) if n.get("mono") else TITLE()
     box = d.textbbox((0, 0), value, font=f)
-    d.text(((WIDTH - (box[2] - box[0])) / 2 - box[0], y0 + 27 - (box[3] - box[1]) / 2 - box[1]),
-           value, font=f, fill=INK)
+    w = box[2] - box[0] + (18 if n.get("star") else 0)
+    x = (WIDTH - w) / 2
+    if n.get("star"):
+        star(d, x + 7, y0 + 27, 8, INK)
+        x += 18
+    d.text((x - box[0], y0 + 27 - (box[3] - box[1]) / 2 - box[1]), value, font=f, fill=INK)
 
 
 def draw_start(d):

@@ -5,6 +5,7 @@ work the same everywhere: A and B set the volume, A and B together mute,
 holding the middle goes Home, and left goes back. After a while without a
 press the screen goes dark, and the first press only lights it again.
 """
+import datetime
 import json
 import math
 import os
@@ -272,8 +273,9 @@ class BluetoothScreen:
 
 
 class OptionsScreen:
-    """Val, right from Spelas nu: Blanda and Upprepa for the library's queue,
-    and for every source Sovtimer and Vila. The middle changes a row; a few
+    """Val, right from Spelas nu: first Gilla, which saves what plays to the
+    inbox, then Blanda and Upprepa for the library's queue, and for every
+    source Sovtimer and Vila. The middle changes a row; a few
     seconds without a press and it goes back to Spelas nu by itself."""
     REPEAT = {"no": "av", "track": "låten", "list": "listan"}
 
@@ -282,7 +284,7 @@ class OptionsScreen:
         self.sel = 0
 
     def rows(self, app):
-        rows = []
+        rows = [("like", "Gilla", "sparad" if app.liked() else "")]
         if self.source == "jellyfin":
             rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
                      ("repeat", "Upprepa", self.REPEAT[app.repeat])]
@@ -290,7 +292,8 @@ class OptionsScreen:
 
     def view(self, app):
         rows = self.rows(app)
-        return {"kind": "list", "rows": [(None, label, value) for _, label, value in rows],
+        return {"kind": "list", "rows": [("★" if what == "like" else None, label, value)
+                                         for what, label, value in rows],
                 "selected": self.sel, "legend": [("●", "ändra"), ("◀", "tillbaka")]}
 
     def key(self, app, ev):
@@ -299,7 +302,9 @@ class OptionsScreen:
             self.sel = (self.sel + (1 if ev == "down" else -1)) % len(rows)
         elif ev in ("center", "right"):
             what = rows[self.sel][0]
-            if what == "shuffle":
+            if what == "like":
+                app.like()
+            elif what == "shuffle":
                 app.toggle_shuffle()
             elif what == "repeat":
                 app.cycle_repeat()
@@ -336,6 +341,13 @@ class App:
         self.now = time.monotonic()
         self.shuffled, self.unshuffled, self.repeat = False, [], "no"
         self.timer_end = None
+        self.inbox = os.path.join(os.path.dirname(settings.path), "inkorg.jsonl")
+        self.likes = set()          # what is in the inbox already, so Val can say sparad
+        try:
+            with open(self.inbox) as f:
+                self.likes = {self._like_key(json.loads(line)) for line in f if line.strip()}
+        except (OSError, ValueError):
+            pass
         self.last_press = time.monotonic()
         self.asleep = False
         self.backlight = settings["brightness"]
@@ -460,7 +472,62 @@ class App:
                       headers=[f"Authorization: {self.jf.auth}"])
         self.push(PlayingScreen())
 
-    # Val: shuffle, repeat, the sleep timer
+    # Val: Gilla, shuffle, repeat, the sleep timer
+    def now_playing(self):
+        """All there is to say about what plays now, for the inbox: {} when nothing does."""
+        p = self.mpv.props
+        if self.bt_playing():
+            st = self.bt.state
+            return {"source": "blåtand", "device": st.get("device"), "title": st.get("title") or None,
+                    "artist": st.get("artist") or None, "position": round(st.get("position") or 0)}
+        if p.get("idle-active"):
+            return {}
+        if self.playing == "jellyfin":
+            i = p.get("playlist-pos")
+            if i is None or not 0 <= i < len(self.queue):
+                return {}
+            t = self.queue[i]
+            return {"source": "bibliotek", "title": t.get("Name"), "artist": jellyfin.artist(t) or None,
+                    "album": t.get("Album"), "year": t.get("ProductionYear"), "jellyfin_id": t.get("Id"),
+                    "duration": round(jellyfin.seconds(t)), "position": round(p.get("time-pos") or 0)}
+        if self.playing == "radio":
+            ch = self.channels[self.channel]
+            out = {"source": "radio", "station": ch["name"], "sr_id": ch.get("id"), "stream": radio.stream_url(ch)}
+            if "id" in ch:
+                info = self.radio_info.get(ch["id"], {})
+                if info.get("now"):
+                    out.update(programme=info["now"][0], programme_time=info["now"][1])
+                if info.get("next"):
+                    out.update(next=info["next"][0], next_time=info["next"][1])
+            else:
+                song = p.get("media-title") or ""
+                if song and song not in (ch["url"], ch["url"].rsplit("/", 1)[-1]):
+                    out["song"] = song
+            return out
+        return {}
+
+    def _like_key(self, item):
+        return tuple(item.get(k) for k in ("source", "title", "artist", "station", "programme", "song"))
+
+    def liked(self):
+        item = self.now_playing()
+        return bool(item) and self._like_key(item) in self.likes
+
+    def like(self):
+        """Saves what plays, with when, as one JSON line in the inbox."""
+        item = self.now_playing()
+        if not item:
+            self.notify("GILLA", "Inget spelas")
+            return
+        item = {"liked": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                **{k: v for k, v in item.items() if v not in (None, "")}}
+        os.makedirs(os.path.dirname(self.inbox), exist_ok=True)
+        with open(self.inbox, "a") as f:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        self.likes.add(self._like_key(item))
+        self.notify("GILLAD", "Sparad", star=True)
     def reorder(self, tracks):
         """Puts tracks in mpv's playlist around the track that plays, which plays on."""
         i = self.mpv.props.get("playlist-pos")
@@ -615,8 +682,8 @@ class App:
             self.volume.apply()
 
     # buttons, settings, the clock
-    def notify(self, label, value, mono=False, legend=None):
-        self.notice = {"label": label, "value": value, "mono": mono, "legend": legend}
+    def notify(self, label, value, mono=False, legend=None, star=False):
+        self.notice = {"label": label, "value": value, "mono": mono, "legend": legend, "star": star}
         self.notice_until = self.now + OVERLAY_SECONDS
 
     def go_to_sleep(self):
