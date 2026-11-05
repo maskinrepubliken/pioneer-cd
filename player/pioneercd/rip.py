@@ -1,16 +1,17 @@
-"""Saving a CD: FLAC files on the Pi, then into Jellyfin's music on the server.
+"""Saving a CD: MP3 files on the Pi, then into Jellyfin's music on the server.
 
 The drive reads one place at a time, so playing and saving cannot share it
 without the playing stuttering: the disc is saved only while it does not
 play. cdparanoia reads a track at a time (its fast mode, -Z, about 7×: the
 paranoid modes read slower than the music plays on this drive), and is
 stopped (SIGSTOP) the moment the disc plays again and goes on (SIGCONT)
-when it stops or pauses. flac encodes each track, tagged, beside it.
+when it stops or pauses. ffmpeg encodes each track to MP3, 320 kbit/s with
+ID3v2.3 tags, which every player plays (FLAC did not play on the phones here).
 
 When all tracks are saved the album goes to the server as a tar stream over
 ssh, with a key the server only lets unpack into its Pioneer CD folder, and
 Jellyfin is told the folder is new. What is saved stays on the Pi:
-<state>/cd-rips/<disc id>/<artist>/<album>/NN title.flac, and a done file
+<state>/cd-rips/<disc id>/<artist>/<album>/NN title.mp3, and a done file
 once it is on the server. A disc taken out stops the saving; put back, it
 goes on from the tracks already saved.
 """
@@ -77,7 +78,7 @@ class Ripper:
             os.makedirs(where, exist_ok=True)
             tracks = album["tracks"]
             for k, track in enumerate(tracks, 1):
-                name = f"{track['number']:02d} {safe(track['title'])}.flac"
+                name = f"{track['number']:02d} {safe(track['title'])}.mp3"
                 if os.path.exists(os.path.join(where, name)):
                     continue
                 self.status[discid] = f"{k} av {len(tracks)}"
@@ -126,16 +127,18 @@ class Ripper:
         os.replace(wav + ".part", wav)
         return True
 
-    def _encode(self, wav, flac, album, track, total):
-        tags = {"TITLE": track["title"], "ARTIST": track["artist"] or album["artist"],
-                "ALBUM": album["title"], "ALBUMARTIST": album["artist"], "TRACKNUMBER": str(track["number"]),
-                "TRACKTOTAL": str(total), "DATE": album.get("year") or "",
-                "MUSICBRAINZ_ALBUMID": album.get("musicbrainz_release") or "", "MUSICBRAINZ_DISCID": album["discid"],
-                "BARCODE": album.get("barcode") or ""}
-        args = ["nice", "-n", "15", "flac", "-s", "-f", "-5", "-o", flac + ".part"]
-        args += [f"--tag={k}={v}" for k, v in tags.items() if v]
-        subprocess.run(args + [wav], check=True)
-        os.replace(flac + ".part", flac)
+    def _encode(self, wav, mp3, album, track, total):
+        tags = {"title": track["title"], "artist": track["artist"] or album["artist"],
+                "album": album["title"], "album_artist": album["artist"], "track": f"{track['number']}/{total}",
+                "date": album.get("year") or "", "MusicBrainz Album Id": album.get("musicbrainz_release") or "",
+                "MusicBrainz Disc Id": album["discid"], "BARCODE": album.get("barcode") or ""}
+        args = ["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", wav,
+                "-codec:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3", "-f", "mp3"]
+        for k, v in tags.items():
+            if v:
+                args += ["-metadata", f"{k}={v}"]
+        subprocess.run(args + [mp3 + ".part"], check=True)
+        os.replace(mp3 + ".part", mp3)
         os.remove(wav)
 
     def _send(self, discid, artist, title):

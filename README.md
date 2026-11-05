@@ -107,10 +107,12 @@ does nothing.
 
 ## Saving a CD
 
-Spara skivan in Val (right on a CD) saves the disc as FLAC on the Pi and then into Jellyfin.
+Spara skivan, last in Val (right on a CD), saves the disc as MP3 (320 kbit/s, ID3v2.3 tags:
+FLAC did not play on the phones here) on the Pi and then into Jellyfin.
 The drive reads one place at a time, so the disc is saved only while it does not play:
 cdparanoia (its fast mode; the paranoid ones read slower than the music plays on this drive)
-is stopped while the disc plays and goes on when it is paused or done. The files are in
+is stopped while the disc plays and goes on when it is paused or done; ffmpeg encodes. The
+files are in
 `/var/lib/pioneer-cd/cd-rips/<disc id>/<artist>/<album>/`. Saved, the album goes as a tar
 stream over ssh to the server named in `[upload]`, with a key of the Pi's own that the server
 lets do one thing only, in `~/.ssh/authorized_keys` there:
