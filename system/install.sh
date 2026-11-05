@@ -24,6 +24,8 @@ sed -i -e 's/^#\?Name = .*/Name = Pioneer CD/' -e 's/^#\?Class = .*/Class = 0x20
     -e 's/^#\?DiscoverableTimeout = .*/DiscoverableTimeout = 0/' /etc/bluetooth/main.conf
 install -D -m 644 "$REPO/system/bluealsa-sink.conf" /etc/systemd/system/bluealsa.service.d/pioneer-cd.conf
 install -m 644 "$REPO/system/pioneer-cd-bt-agent.service" /etc/systemd/system/pioneer-cd-bt-agent.service
+# With no Wi-Fi, the player may bring up a paired phone's internet over Bluetooth.
+install -m 644 "$REPO/system/pioneer-cd-network.rules" /etc/polkit-1/rules.d/50-pioneer-cd-network.rules
 
 # Spara skivan sends saved CDs to the server with a key of its own (see [upload]).
 install -d -o pi -g pi /var/lib/pioneer-cd

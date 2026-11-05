@@ -389,6 +389,7 @@ class App:
         self.bt_polled = 0
         self.bt_shown = False       # whether the adapter is visible and pairable
         self.bt_was_playing = False
+        self.bt_tethered = -1e9     # when the phone's internet was last asked for
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         self.cd_album = None        # the disc's tracks and names, once read
         self.cd_error = False       # the disc could not be read
@@ -892,6 +893,10 @@ class App:
         except Exception as e:
             print("bluetooth:", repr(e), flush=True)
             return
+        if st and now - self.bt_tethered > 60 and not self.bt.online():
+            # No Wi-Fi: the connected phone's internet, if it shares it over Bluetooth.
+            self.bt_tethered = now
+            threading.Thread(target=self.bt.tether, daemon=True).start()
         was, playing = self.bt_was_playing, self.bt_playing()
         self.bt_was_playing = playing
         if playing and not self.mpv.props.get("idle-active"):

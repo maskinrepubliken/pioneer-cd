@@ -87,6 +87,14 @@ in the drive, Radio, Bibliotek and Blåtand. There is no settings screen: the vo
 brightness, the minutes before the screen sleeps and the Bluetooth boost are set in the config's
 `[player]` table; the volume itself is kept by the player.
 
+## Internet
+
+NetworkManager has the Wi-Fi: Småhusbyn (priority 10) and Makerspace (5). With neither, the
+player asks for the internet of the phone connected over Bluetooth, once a minute, if the
+phone shares it (Android: Bluetooth tethering; iPhone: Personal Hotspot). A polkit rule,
+`system/pioneer-cd-network.rules`, lets the player bring networks up and down, and nothing
+more. Wi-Fi goes first: the phones' connections have priority 1 and route metric 900.
+
 ## The CD drive
 
 A laptop DVD drive in a USB–SATA case. Spinning up it draws more than the Pi 4's USB ports
