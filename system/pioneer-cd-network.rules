@@ -1,0 +1,8 @@
+// /etc/polkit-1/rules.d/50-pioneer-cd-network.rules: the player (user pi) may
+// bring a network up or down, to get internet from a phone over Bluetooth when
+// there is no Wi-Fi. It may not change the connections' settings.
+polkit.addRule(function (action, subject) {
+    if (subject.user == "pi" && action.id == "org.freedesktop.NetworkManager.network-control") {
+        return polkit.Result.YES;
+    }
+});

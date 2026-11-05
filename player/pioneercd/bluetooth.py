@@ -5,8 +5,12 @@ install.sh) plays the sound through the default ALSA device, and bt-agent
 accepts a pairing without a code. This module only talks to BlueZ over
 D-Bus: the adapter is visible while the Blåtand screen is open, and the
 phone's media player (AVRCP) gives the track and takes play, pause, next
-and previous.
+and previous. With no Wi-Fi, the phone's internet can be had over Bluetooth
+too (PAN), if the phone shares it: tether() asks NetworkManager for that.
 """
+import socket
+import subprocess
+
 import dbus
 
 BLUEZ = "org.bluez"
@@ -43,7 +47,8 @@ class Bluetooth:
             if not dev.get("Trusted"):     # so the phone may reconnect by itself later
                 self.bus.get_object(BLUEZ, path).Set("org.bluez.Device1", "Trusted", dbus.Boolean(True),
                                                      dbus_interface=PROPS)
-            state = {"device": str(dev.get("Alias") or dev.get("Name") or "Telefon"), "path": str(path)}
+            state = {"device": str(dev.get("Alias") or dev.get("Name") or "Telefon"), "path": str(path),
+                     "address": str(dev.get("Address", ""))}
             for ppath, pifaces in objects.items():
                 player = pifaces.get("org.bluez.MediaPlayer1")
                 if player and str(ppath).startswith(str(path) + "/"):
@@ -64,6 +69,24 @@ class Bluetooth:
         objects = self.bus.get_object("org.bluealsa", "/org/bluealsa").GetManagedObjects(
             dbus_interface="org.freedesktop.DBus.ObjectManager")
         return any(bool(i["org.bluealsa.PCM1"].get("Running")) for i in objects.values() if "org.bluealsa.PCM1" in i)
+
+    @staticmethod
+    def online():
+        """Whether there is a route to the internet (Wi-Fi, or a phone already)."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("1.1.1.1", 53))      # UDP: only looks the route up, sends nothing
+            return True
+        except OSError:
+            return False
+        finally:
+            s.close()
+
+    def tether(self):
+        """The connected phone's internet over Bluetooth, if it shares it (system/pioneer-cd-network.rules)."""
+        address = self.state.get("address")
+        if address:
+            subprocess.run(["nmcli", "device", "connect", address], capture_output=True, timeout=60)
 
     def control(self, method):
         """Play, Pause, Next or Previous on the phone."""
