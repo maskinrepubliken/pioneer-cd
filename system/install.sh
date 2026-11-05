@@ -5,7 +5,7 @@ set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 
 apt-get install -y mpv fonts-ibm-plex python3-spidev python3-smbus2 python3-pil python3-numpy python3-libgpiod \
-    bluez-alsa-utils bluez-tools python3-dbus
+    bluez-alsa-utils bluez-tools python3-dbus python3-libdiscid
 raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 

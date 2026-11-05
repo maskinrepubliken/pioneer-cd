@@ -74,6 +74,12 @@ class Mpv:
             self.command("playlist-play-index", start)
         self.set("pause", False)
 
+    def load(self, url, start=0.0):
+        """Plays one url from start seconds (the CD: the whole disc, a chapter a track)."""
+        self.set("http-header-fields", [])
+        self.command("loadfile", url, "replace", -1, f"start={start:.2f}")
+        self.set("pause", False)
+
     def toggle(self):
         self.command("cycle", "pause")
 

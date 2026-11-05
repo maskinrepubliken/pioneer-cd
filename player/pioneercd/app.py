@@ -14,7 +14,7 @@ import subprocess
 import threading
 import time
 
-from . import jellyfin, radio
+from . import cd, jellyfin, radio
 
 OVERLAY_SECONDS = 2
 TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
@@ -266,6 +266,61 @@ class BluetoothScreen:
             app.back()
 
 
+class CdScreen:
+    """CD: the disc's tracks, by number and length; the middle plays one. While
+    the names are being looked up, it says so."""
+
+    def __init__(self):
+        self.list = None
+
+    def view(self, app):
+        album = app.cd_album
+        if not album:
+            return {"kind": "message", "title": "Läser skivan", "text": "Hämtar spårnamnen.",
+                    "legend": [("◀", "tillbaka")]}
+        if not self.list:
+            rows = [{"num": t["number"], "label": t["title"], "value": clock(t["seconds"]), "index": i}
+                    for i, t in enumerate(album["tracks"])]
+            self.list = ListScreen(album["title"], rows, lambda app, r: app.play_cd(r["index"]), verb="spela")
+        return self.list.view(app)
+
+    def key(self, app, ev):
+        if self.list:
+            self.list.key(app, ev)
+        elif ev == "left":
+            app.back()
+
+
+class CdPlayingScreen:
+    """Spelas nu for the CD: mpv plays the whole disc, and the track is where
+    in it the time is. Up and down go to the track before or after."""
+
+    def view(self, app):
+        album, p = app.cd_album, app.mpv.props
+        if not album or app.playing != "cd" or p.get("idle-active"):
+            return {"kind": "message", "title": "Inget spelas", "legend": [("◀", "tillbaka")]}
+        i, t = app.cd_track()
+        pos = (p.get("time-pos") or 0) - t["start"]
+        paused = bool(p.get("pause"))
+        return {"kind": "playing", "position": f"{i + 1} av {len(album['tracks'])}",
+                "title": t["title"], "subtitle": t["artist"] or album["title"],
+                "progress": pos / t["seconds"] if t["seconds"] else None,
+                "times": (clock(pos), clock(t["seconds"])), "paused": paused,
+                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista"), ("▶", "val")]}
+
+    def key(self, app, ev):
+        if ev == "center":
+            app.notify("UPPSPELNING", "Spelar" if app.mpv.props.get("pause") else "Pausad")
+            app.mpv.toggle()
+        elif ev in ("up", "down"):
+            i, _ = app.cd_track()
+            app.cd_seek(i + (1 if ev == "down" else -1))
+        elif ev == "right":
+            app.push(OptionsScreen("cd"))
+        elif ev == "left":
+            app.back()
+
+
 class OptionsScreen:
     """Val, right from Spelas nu: first Gilla, which saves what plays to the
     inbox, then Blanda and Upprepa for the library's queue, and for every
@@ -282,6 +337,8 @@ class OptionsScreen:
         if self.source == "jellyfin":
             rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
                      ("repeat", "Upprepa", self.REPEAT[app.repeat])]
+        elif self.source == "cd":
+            rows += [("repeat", "Upprepa", "skivan" if app.repeat == "list" else "av")]
         return rows + [("timer", "Sovtimer", app.timer_text()), ("sleep", "Vila", "")]
 
     def view(self, app):
@@ -321,6 +378,8 @@ class App:
         self.bt_shown = False       # whether the adapter is visible and pairable
         self.bt_was_playing = False
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
+        self.cd_album = None        # the disc's tracks and names, once read
+        self.state = os.path.dirname(settings.path)
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
@@ -356,12 +415,14 @@ class App:
         rows = [{"label": "Radio", "id": "radio"}, {"label": "Bibliotek", "id": "jellyfin"},
                 {"label": "Blåtand", "id": "bluetooth"}]
         if self.disc == "audio":
-            rows.insert(0, {"label": "CD", "id": "cd"})
+            rows.insert(0, {"label": "CD", "id": "cd",
+                            "value": self.cd_album["title"] if self.cd_album else "läser"})
         if self.bt_playing():
             rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
         elif self.playing and not self.mpv.props.get("idle-active"):
             rows.insert(0, {"label": "Spelas nu", "id": "playing",
-                            "value": self.channels[self.channel]["name"] if self.playing == "radio" else "Bibliotek"})
+                            "value": {"radio": self.channels[self.channel]["name"], "cd": "CD"}.get(
+                                self.playing, "Bibliotek")})
         home = self.stack[0]
         if [r["id"] for r in home.rows] != [r["id"] for r in rows]:
             home.sel = 0
@@ -380,7 +441,7 @@ class App:
             if self.bt_playing():
                 self.push(BluetoothScreen(pairing=False))
             else:
-                self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
+                self.push({"radio": RadioScreen, "cd": CdPlayingScreen}.get(self.playing, PlayingScreen)())
         elif kind == "radio":
             # Straight to the start channel (P1); up and down change channel from there.
             if self.playing != "radio" or self.mpv.props.get("idle-active"):
@@ -389,7 +450,7 @@ class App:
         elif kind == "jellyfin":
             self.open_jellyfin()
         elif kind == "cd":
-            self.push(MessageScreen("CD", "Kommer snart", "Att spela skivan byggs härnäst."))
+            self.push(CdScreen())
         elif kind == "bluetooth":
             if self.bt:
                 self.push(BluetoothScreen())
@@ -486,6 +547,13 @@ class App:
             return {"source": "bibliotek", "title": t.get("Name"), "artist": jellyfin.artist(t) or None,
                     "album": t.get("Album"), "year": t.get("ProductionYear"), "jellyfin_id": t.get("Id"),
                     "duration": round(jellyfin.seconds(t)), "position": round(p.get("time-pos") or 0)}
+        if self.playing == "cd" and self.cd_album:
+            i, t = self.cd_track()
+            a = self.cd_album
+            return {"source": "cd", "title": t["title"], "artist": t["artist"] or a["artist"] or None,
+                    "album": a["title"], "year": a["year"] or None, "track": t["number"],
+                    "discid": a["discid"], "musicbrainz_release": a["musicbrainz_release"],
+                    "position": round((self.mpv.props.get("time-pos") or 0) - t["start"])}
         if self.playing == "radio":
             ch = self.channels[self.channel]
             out = {"source": "radio", "station": ch["name"], "sr_id": ch.get("id"), "stream": radio.stream_url(ch)}
@@ -554,6 +622,10 @@ class App:
         self.shuffled = not self.shuffled
 
     def cycle_repeat(self):
+        if self.playing == "cd":            # the disc is one file to mpv: again from the start, or not
+            self.repeat = "no" if self.repeat == "list" else "list"
+            self.mpv.set("loop-file", "inf" if self.repeat == "list" else "no")
+            return
         self.repeat = {"no": "track", "track": "list", "list": "no"}[self.repeat]
         self.mpv.set("loop-file", "inf" if self.repeat == "track" else "no")
         self.mpv.set("loop-playlist", "inf" if self.repeat == "list" else "no")
@@ -607,6 +679,45 @@ class App:
             threading.Thread(target=run, daemon=True).start()
 
     # radio
+    # the CD
+    def disc_changed(self, disc):
+        """From cd.watch(): a disc in reads its tracks and names in the background;
+        a disc out stops it, if it played."""
+        self.disc = disc
+        self.cd_album = None
+        if disc == "audio":
+            def run():
+                try:
+                    self.cd_album = cd.album(cd.read_toc(), self.state)
+                except Exception as e:
+                    print("cd:", repr(e), flush=True)
+            threading.Thread(target=run, daemon=True).start()
+        elif self.playing == "cd":
+            self.mpv.stop()
+            self.playing = None
+            if any(isinstance(s, (CdScreen, CdPlayingScreen)) for s in self.stack):
+                del self.stack[1:]
+
+    def cd_track(self):
+        """The track playing, by where in the disc the time is: (index, track)."""
+        tracks = self.cd_album["tracks"]
+        pos = self.mpv.props.get("time-pos") or 0
+        i = max((k for k, t in enumerate(tracks) if t["start"] <= pos + 0.5), default=0)
+        return i, tracks[i]
+
+    def cd_seek(self, index):
+        tracks = self.cd_album["tracks"]
+        self.mpv.command("seek", tracks[index % len(tracks)]["start"], "absolute")
+
+    def play_cd(self, index):
+        self.pause_phone()
+        self.playing = "cd"
+        self.queue = []
+        self.repeat = "no"
+        self.mpv.set("loop-file", "no")
+        self.mpv.load("cdda://" + cd.DEVICE, self.cd_album["tracks"][index]["start"])
+        self.push(CdPlayingScreen())
+
     def channel_list(self):
         """All the channels, with what is on each SR channel; picking one plays it and goes back."""
         rows = []

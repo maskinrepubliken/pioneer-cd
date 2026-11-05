@@ -2,7 +2,7 @@
 
 A music player for a Raspberry Pi 4: CDs from a USB drive, Jellyfin over the network and Bluetooth
 from a phone, played through a small amplifier and controlled from a tiny colour screen with a
-joystick. Radio, Jellyfin and Bluetooth play; CD is next.
+joystick. CDs, radio, Jellyfin and Bluetooth play.
 
 ## Part of the pioneer series
 
@@ -85,6 +85,18 @@ Home lists what there is to play: Spelas nu while something plays, CD while a di
 in the drive, Radio, Bibliotek and Blåtand. There is no settings screen: the volume cap, the
 brightness, the minutes before the screen sleeps and the Bluetooth boost are set in the config's
 `[player]` table; the volume itself is kept by the player.
+
+## The CD drive
+
+A laptop DVD drive in a USB–SATA case. Spinning up it draws more than the Pi 4's USB ports
+give (1.2 A between them, a limit in the hardware): the ports cut out again and again
+(`over-current change` in `dmesg`) and the sound card with them. The case's second USB plug
+goes in a USB charger of its own, not in the Pi.
+
+The player reads the disc's table of contents (libdiscid), plays the disc with mpv
+(`cdda://`, a chapter a track) and names the tracks from, in turn: its own file for the disc,
+`/var/lib/pioneer-cd/cd/<disc id>.json`, which can be written by hand; MusicBrainz, by the
+disc's id or the tracks' lengths (what it says is kept in that file); or Spår 1, 2, ….
 
 ## Sound
 

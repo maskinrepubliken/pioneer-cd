@@ -41,7 +41,7 @@ def main():
         bt = None
     app = App(config, Mpv(os.path.join(run, "mpv.sock")), volume, settings, bt)
     app.draw = lambda view: board.show(ui.render(view))
-    cd.watch(lambda disc: setattr(app, "disc", disc))
+    cd.watch(app.disc_changed)
     keys = Keys()
     shown, backlight = None, settings["brightness"]
     while True:
