@@ -89,11 +89,14 @@ brightness, the minutes before the screen sleeps and the Bluetooth boost are set
 
 ## Internet
 
-NetworkManager has the Wi-Fi: Småhusbyn (priority 10) and Makerspace (5). With neither, the
+NetworkManager has the Wi-Fi: Småhusbyn (priority 10), Makerspace (5) and the phone Storken's
+hotspot (1), so the hotspot is used only where neither is. Without Wi-Fi the
 player asks for the internet of the phone connected over Bluetooth, once a minute, if the
 phone shares it (Android: Bluetooth tethering; iPhone: Personal Hotspot). A polkit rule,
 `system/pioneer-cd-network.rules`, lets the player bring networks up and down, and nothing
-more. Wi-Fi goes first: the phones' connections have priority 1 and route metric 900.
+more. Wi-Fi goes first: the phones' Bluetooth connections have priority 1 and route metric
+900. (Storken, an Android phone, takes the Bluetooth connection and drops it at once, so its
+hotspot is the way there.)
 
 ## The CD drive
 
