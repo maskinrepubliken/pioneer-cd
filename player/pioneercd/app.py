@@ -275,6 +275,9 @@ class CdScreen:
 
     def view(self, app):
         album = app.cd_album
+        if app.cd_error:
+            return {"kind": "message", "title": "Fel: skivan gick inte att läsa", "error": True,
+                    "text": "Ta ut den och prova igen.", "legend": [("◀", "tillbaka")]}
         if not album:
             return {"kind": "message", "title": "Läser skivan", "text": "Hämtar spårnamnen.",
                     "legend": [("◀", "tillbaka")]}
@@ -379,6 +382,7 @@ class App:
         self.bt_was_playing = False
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         self.cd_album = None        # the disc's tracks and names, once read
+        self.cd_error = False       # the disc could not be read
         self.disc_first = True      # the first word from cd.watch() is the disc in at start, not put in
         self.disc_put_in = None     # a disc just put in and read, for tick() to act on
         self.disc_out = False       # the disc was taken out, for tick() to act on
@@ -706,6 +710,7 @@ class App:
         a disc out stops it, if it played."""
         self.disc = disc
         self.cd_album = None
+        self.cd_error = False
         first, self.disc_first = self.disc_first, False
         if disc == "audio":
             def run():
@@ -713,6 +718,7 @@ class App:
                     self.cd_album = cd.album(cd.read_toc(), self.state)
                 except Exception as e:
                     print("cd:", repr(e), flush=True)
+                    self.cd_error = True
                     return
                 if first:
                     self.last_disc = self.cd_album["discid"]
