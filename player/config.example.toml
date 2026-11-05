@@ -23,8 +23,8 @@ user = ""
 # The radio's channels, in order: Sveriges Radio's by id
 # (api.sr.se/api/v2/channels), other stations by their stream's address.
 # Without this list: P1, P2, P3, P4 Sjuhärad, Radioapans knattekanal,
-# Lugna Favoriter, Bandit Rock, Nightride FM, Radio Art Tantra, Sensual Lounge
-# and Yoga Chill (pioneercd/radio.py).
+# Lugna Favoriter, Bandit Rock, Nightride FM, Yoga Chill, Sensual Lounge and
+# Radio Art Tantra (pioneercd/radio.py).
 # [radio]
 # channels = [
 #   { id = 132, name = "P1" },
