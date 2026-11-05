@@ -98,7 +98,9 @@ The player reads the disc's table of contents (libdiscid), plays the disc with m
 (`cdda://`, a chapter a track) and names the tracks from, in turn: its own file for the disc,
 `/var/lib/pioneer-cd/cd/<disc id>.json`, which can be written by hand; MusicBrainz, by the
 disc's id, the tracks' lengths or the barcode (what it says is kept in that file); the disc's
-own CD-Text; or Spår 1, 2, ….
+own CD-Text (asked of the drive straight, READ TOC format 5: a fifth of a second, where
+cd-info takes half a minute); or Spår 1, 2, …. A disc starts at once on its table of contents
+and CD-Text; MusicBrainz's names, if it has any, come after.
 A disc put in plays at once: another than the last one, or the same one taken out and put back
 (the drive says it was shut empty in between). Opening and shutting the tray with the disc in
 does nothing.

@@ -716,8 +716,9 @@ class App:
     # radio
     # the CD
     def disc_changed(self, disc):
-        """From cd.watch(): a disc in reads its tracks and names in the background;
-        a disc out stops it, if it played."""
+        """From cd.watch(): a disc in reads its tracks in the background, which is
+        quick, so a disc put in can start at once; the names follow when found.
+        A disc out stops it, if it played."""
         self.disc = disc
         self.cd_album = None
         self.cd_error = False
@@ -732,17 +733,25 @@ class App:
         if disc == "audio":
             def run():
                 try:
-                    self.cd_album = cd.album(cd.read_toc(), self.state)
+                    toc = cd.read_toc()
+                    self.cd_album = cd.album(toc, self.state, look_up=False)
                 except Exception as e:
                     print("cd:", repr(e), flush=True)
                     self.cd_error = True
                     return
-                discid = self.cd_album["discid"]
+                discid = toc["discid"]
                 # Another disc plays at once, and so does the same one taken out and put back
                 # (the tray shut empty in between); the tray only opened and shut, nothing happens.
                 if not first and (discid != self.last_disc or self.disc_emptied):
                     self.disc_put_in = discid
                 self.last_disc, self.disc_emptied = discid, False
+                try:
+                    named = cd.album(toc, self.state)
+                except Exception as e:
+                    print("cd names:", repr(e), flush=True)
+                    return
+                if self.disc == "audio" and self.last_disc == discid:     # still the same disc in
+                    self.cd_album = named
             threading.Thread(target=run, daemon=True).start()
         else:
             self.disc_out = True            # for tick(): from the main loop, not this thread
