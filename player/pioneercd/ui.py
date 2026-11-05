@@ -13,7 +13,9 @@ matters. The views:
 
 and "volume": {"level": 60, "muted": False} on any view draws the volume panel over it.
 """
+import math
 import os
+import time
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -75,6 +77,42 @@ def fit(d, text, f, width):
     return text.rstrip() + "…"
 
 
+# Text too long for its place rolls by, round and round: it waits, glides one
+# lap (text, a gap, the text again) with an ease in and out, and waits again.
+# Each text keeps its own clock from when it first showed, so a row chosen
+# anew starts from its beginning.
+MARQUEE_WAIT, MARQUEE_SPEED, MARQUEE_GAP = 2.0, 18, 24   # seconds, pixels a second, pixels
+_since = {}      # (slot, text) -> when it first showed
+_seen = set()    # the keys drawn in this frame
+
+
+def marquee(img, xy, width, text, f, fill, slot, now, anchor="la"):
+    """Draws text at xy, or, when it is wider than width, rolling within width."""
+    d = ImageDraw.Draw(img)
+    tw = d.textlength(text, font=f)
+    if tw <= width:
+        d.text(xy, text, font=f, fill=fill, anchor=anchor)
+        return
+    key = (slot, text)
+    _seen.add(key)
+    start = _since.setdefault(key, now)
+    lap = tw + MARQUEE_GAP
+    move = lap / MARQUEE_SPEED
+    t = (now - start) % (MARQUEE_WAIT + move)
+    p = 0.0 if t < MARQUEE_WAIT else (1 - math.cos(math.pi * (t - MARQUEE_WAIT) / move)) / 2
+    offset = round(p * lap)
+    asc, desc = f.getmetrics()
+    h = asc + desc + 2
+    layer = Image.new("RGBA", (int(width), h), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    ld.text((-offset, 1), text, font=f, fill=fill)
+    ld.text((-offset + lap, 1), text, font=f, fill=fill)
+    # Where plain text with this anchor would sit: its top at y ("la"), or its middle ("lm").
+    x, y = xy
+    y = round(y - h / 2) if anchor[1] == "m" else round(y) - 1
+    img.paste(layer, (int(x), y), layer)
+
+
 def glyph(d, ch, x, y):
     """A joystick sign drawn as a shape (Plex has none of them): ● ▲ ▼ ◀ ▶,
     in a 6×6 box at x, y. Returns its width."""
@@ -127,7 +165,10 @@ def draw_list(d, v):
         vw = d.textlength(value, font=ROW_VALUE())
         d.text((right - 5, mid), value, font=ROW_VALUE(), fill=fg if on else INK_FAINT, anchor="rm")
         f = ROW_BOLD() if on else ROW()
-        d.text((x, mid), fit(d, label, f, right - 9 - x - vw), font=f, fill=fg, anchor="lm")
+        if on:
+            marquee(v["img"], (x, mid), right - 9 - x - vw, label, f, fg, "row", v["now"], anchor="lm")
+        else:
+            d.text((x, mid), fit(d, label, f, right - 9 - x - vw), font=f, fill=fg, anchor="lm")
         y += ROW_H
     if len(rows) > VISIBLE:
         # Where in the list: a thin bar in the right edge, its thumb as long as what shows.
@@ -145,17 +186,18 @@ def draw_message(d, v):
     color = ALARM if v.get("error") else INK
     # A long title steps down until it fits.
     f = next((f for f in (HUGE(), BIG(), TITLE()) if d.textlength(title, font=f) <= WIDTH - 10), TITLE())
+    img, now = v["img"], v["now"]
     if text:
-        d.text((5, 4), fit(d, title, f, WIDTH - 10), font=f, fill=color)
-        d.text((5, 32), fit(d, text, SUB(), WIDTH - 10), font=SUB(), fill=INK_MUTED)
+        marquee(img, (5, 4), WIDTH - 10, title, f, color, "title", now)
+        marquee(img, (5, 32), WIDTH - 10, text, SUB(), INK_MUTED, "text", now)
     else:
-        d.text((5, BOTTOM // 2), fit(d, title, f, WIDTH - 10), font=f, fill=color, anchor="lm")
+        marquee(img, (5, BOTTOM // 2), WIDTH - 10, title, f, color, "title", now, anchor="lm")
 
 
 def draw_playing(d, v):
-    x = 5
-    d.text((x, 1), fit(d, v.get("title", ""), HUGE(), WIDTH - 2 * x), font=HUGE(), fill=INK)
-    d.text((x, 26), fit(d, v.get("subtitle", ""), SUB(), WIDTH - 2 * x), font=SUB(), fill=INK_MUTED)
+    x, img, now = 5, v["img"], v["now"]
+    marquee(img, (x, 1), WIDTH - 2 * x, v.get("title", ""), HUGE(), INK, "title", now)
+    marquee(img, (x, 26), WIDTH - 2 * x, v.get("subtitle", ""), SUB(), INK_MUTED, "subtitle", now)
     y = 47
     if v.get("progress") is not None:
         d.rectangle([x, y, WIDTH - x, y + 2], fill=PAPER_SUNKEN)
@@ -168,7 +210,7 @@ def draw_playing(d, v):
         d.text((x, y), left, font=TIMES(), fill=INK_FAINT)
         d.text((WIDTH - x - d.textlength(right, font=TIMES()), y), right, font=TIMES(), fill=INK_FAINT)
     elif v.get("line"):
-        d.text((x, y - 7), fit(d, v["line"], TIMES(), WIDTH - 2 * x), font=TIMES(), fill=INK_FAINT)
+        marquee(img, (x, y - 7), WIDTH - 2 * x, v["line"], TIMES(), INK_FAINT, "line", now)
     if v.get("paused"):
         w = 10 + d.textlength("Pausad", font=MONO_BOLD())
         px = (WIDTH - w) // 2
@@ -199,11 +241,13 @@ def draw_start(d):
     d.text(((WIDTH - d.textlength("STARTAR", font=MONO())) / 2, 48), "STARTAR", font=MONO(), fill=INK_FAINT)
 
 
-def render(v):
+def render(v, now=None):
     if v["kind"] == "off":
         return Image.new("RGB", (WIDTH, HEIGHT), "#000000")
     img = Image.new("RGB", (WIDTH, HEIGHT), PAPER)
     d = ImageDraw.Draw(img)
+    v = {**v, "img": img, "now": time.monotonic() if now is None else now}
+    _seen.clear()
     kind = v["kind"]
     if kind == "start":
         draw_start(d)
@@ -214,5 +258,7 @@ def render(v):
             draw_volume(d, v["volume"])
         elif v.get("legend"):
             legend(d, v["legend"])
+    for key in set(_since) - _seen:     # a text no longer shown starts over when it comes back
+        del _since[key]
     d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=FRAME)   # dark edge, as the panel's own
     return img
