@@ -8,6 +8,7 @@ press the screen goes dark, and the first press only lights it again.
 import json
 import math
 import os
+import random
 import subprocess
 import threading
 import time
@@ -15,6 +16,9 @@ import time
 from . import jellyfin, radio
 
 OVERLAY_SECONDS = 2
+TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
+FADE_SECONDS = 30                         # the timer's last half minute fades out
+FADE_DB = 40
 
 
 def clock(seconds):
@@ -68,6 +72,7 @@ class Volume:
         self.level = level
         self.muted = False
         self.boost = 0          # dB on top, for a source that comes in quieter (Bluetooth)
+        self.fade = 0           # dB off, while the sleep timer fades out
         run = lambda *a: subprocess.run(["amixer", "-q", "-c", self.CARD, *a], capture_output=True)
         run("sset", "Speaker", "100%", "unmute")
         if run("sget", self.CONTROL).returncode:
@@ -80,7 +85,7 @@ class Volume:
         return max(-60.0, 27 * math.log10(level / 100)) if level > 0 else -60.0
 
     def apply(self):
-        db = -60.0 if self.muted else min(0.0, self.db(self.level) + self.boost)
+        db = -60.0 if self.muted else max(-60.0, min(0.0, self.db(self.level) + self.boost) - self.fade)
         subprocess.run(["amixer", "-q", "-c", self.CARD, "sset", self.CONTROL, "--", f"{db:.1f}dB"],
                        capture_output=True)
 
@@ -171,13 +176,16 @@ class PlayingScreen:
         return {"kind": "playing", "position": f"{i + 1} av {len(q)}",
                 "title": t.get("Name", ""), "subtitle": jellyfin.artist(t),
                 "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)), "paused": paused,
-                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista")]}
+                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "lista"), ("▶", "val")]}
 
     def key(self, app, ev):
         if ev == "center":
+            app.notify("UPPSPELNING", "Spelar" if app.mpv.props.get("pause") else "Pausad")
             app.mpv.toggle()
         elif ev in ("up", "down"):
             app.mpv.step(1 if ev == "down" else -1)
+        elif ev == "right":
+            app.push(OptionsScreen("jellyfin"))
         elif ev == "left":
             app.back()
 
@@ -194,14 +202,18 @@ class RadioScreen:
         stopped = app.mpv.props.get("idle-active")
         return {"kind": "playing", "title": title, "subtitle": f"{name} · {when}" if when else name,
                 "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
-                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "lista")]}
+                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "lista"), ("▶", "val")]}
 
     def key(self, app, ev):
         if ev == "center":
             if app.mpv.props.get("idle-active"):
+                app.notify("UPPSPELNING", "Spelar")
                 app.play_radio(app.channel)
             else:
+                app.notify("UPPSPELNING", "Pausad")
                 app.mpv.stop()
+        elif ev == "right":
+            app.push(OptionsScreen("radio"))
         elif ev in ("up", "down"):
             app.play_radio((app.channel + (1 if ev == "down" else -1)) % len(app.channels))
         elif ev == "left":
@@ -235,14 +247,58 @@ class BluetoothScreen:
                 "title": st["title"], "subtitle": f"{artist} · {st['device']}" if artist else st["device"],
                 "progress": pos / dur if dur else None, "times": (clock(pos), clock(dur)) if dur else None,
                 "paused": paused,
-                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "tillbaka")]}
+                "legend": [("●", "spela" if paused else "paus"), ("▲▼", "spår"), ("◀", "tillbaka"), ("▶", "val")]}
 
     def key(self, app, ev):
         st = app.bt.state if app.bt else {}
         if ev == "center" and st:
-            app.bt_control("Pause" if st.get("status") == "playing" or st.get("streaming") else "Play")
+            playing = st.get("status") == "playing" or st.get("streaming")
+            app.notify("UPPSPELNING", "Pausad" if playing else "Spelar")
+            app.bt_control("Pause" if playing else "Play")
+        elif ev == "right" and st:
+            app.push(OptionsScreen("bluetooth"))
         elif ev in ("up", "down") and st:
             app.bt_control("Next" if ev == "down" else "Previous")
+        elif ev == "left":
+            app.back()
+
+
+class OptionsScreen:
+    """Val, right from Spelas nu: Blanda and Upprepa for the library's queue,
+    and for every source Sovtimer and Vila. The middle changes a row."""
+    REPEAT = {"no": "av", "track": "låten", "list": "listan"}
+
+    def __init__(self, source):
+        self.source = source
+        self.sel = 0
+
+    def rows(self, app):
+        rows = []
+        if self.source == "jellyfin":
+            rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
+                     ("repeat", "Upprepa", self.REPEAT[app.repeat])]
+        return rows + [("timer", "Sovtimer", app.timer_text()), ("sleep", "Vila", "")]
+
+    def view(self, app):
+        rows = self.rows(app)
+        return {"kind": "list", "rows": [(None, label, value) for _, label, value in rows],
+                "selected": self.sel, "legend": [("●", "ändra"), ("◀", "tillbaka")]}
+
+    def key(self, app, ev):
+        rows = self.rows(app)
+        if ev in ("up", "down"):
+            self.sel = max(0, min(len(rows) - 1, self.sel + (1 if ev == "down" else -1)))
+        elif ev in ("center", "right"):
+            what = rows[self.sel][0]
+            if what == "shuffle":
+                app.toggle_shuffle()
+            elif what == "repeat":
+                app.cycle_repeat()
+            elif what == "timer":
+                app.cycle_timer()
+            elif what == "sleep":
+                app.back()                  # waking up comes back to Spelas nu
+                app.go_to_sleep()
         elif ev == "left":
             app.back()
 
@@ -267,7 +323,10 @@ class App:
         self.channel = 0
         self.radio_info = {}
         self.radio_fetched = None
-        self.overlay_until = 0
+        self.notice, self.notice_until = None, 0
+        self.now = time.monotonic()
+        self.shuffled, self.unshuffled, self.repeat = False, [], "no"
+        self.timer_end = None
         self.last_press = time.monotonic()
         self.asleep = False
         self.backlight = settings["brightness"]
@@ -384,12 +443,78 @@ class App:
 
     def play_tracks(self, tracks, start):
         self.pause_phone()
+        self.shuffled, self.unshuffled = False, []
         self.queue = tracks
         self.counted = set()
         self.playing = "jellyfin"
         self.mpv.play([self.jf.stream_url(t) for t in tracks], start,
                       headers=[f"Authorization: {self.jf.auth}"])
         self.push(PlayingScreen())
+
+    # Val: shuffle, repeat, the sleep timer
+    def reorder(self, tracks):
+        """Puts tracks in mpv's playlist around the track that plays, which plays on."""
+        i = self.mpv.props.get("playlist-pos")
+        if i is None or not 0 <= i < len(self.queue):
+            return
+        current = self.queue[i]
+        self.mpv.command("playlist-clear")              # all but the one that plays
+        for t in tracks:
+            if t is not current:
+                self.mpv.command("loadfile", self.jf.stream_url(t), "append")
+        k = tracks.index(current)
+        if k:
+            self.mpv.command("playlist-move", 0, k + 1)
+        self.queue = tracks
+        self.counted = set()
+
+    def toggle_shuffle(self):
+        if self.playing != "jellyfin" or not self.queue:
+            return
+        if self.shuffled:
+            self.reorder(self.unshuffled)
+        else:
+            self.unshuffled = list(self.queue)
+            i = self.mpv.props.get("playlist-pos") or 0
+            rest = [t for j, t in enumerate(self.queue) if j != i]
+            random.shuffle(rest)
+            self.reorder([self.queue[i]] + rest)
+        self.shuffled = not self.shuffled
+
+    def cycle_repeat(self):
+        self.repeat = {"no": "track", "track": "list", "list": "no"}[self.repeat]
+        self.mpv.set("loop-file", "inf" if self.repeat == "track" else "no")
+        self.mpv.set("loop-playlist", "inf" if self.repeat == "list" else "no")
+
+    def cycle_timer(self):
+        minutes = round((self.timer_end - self.now) / 60) if self.timer_end else 0
+        nxt = next((m for m in TIMER_MINUTES if m > minutes), 0)
+        self.timer_end = self.now + nxt * 60 if nxt else None
+        if self.volume.fade:
+            self.volume.fade = 0
+            self.volume.apply()
+
+    def timer_text(self):
+        if not self.timer_end:
+            return "av"
+        return f"{max(1, math.ceil((self.timer_end - self.now) / 60))} min"
+
+    def run_timer(self, now):
+        """The last half minute fades out; at the end everything stops and the screen sleeps."""
+        if not self.timer_end:
+            return
+        left = self.timer_end - now
+        fade = round(FADE_DB * (1 - max(0.0, left) / FADE_SECONDS)) if left < FADE_SECONDS else 0
+        if fade != self.volume.fade:
+            self.volume.fade = fade
+            self.volume.apply()
+        if left <= 0:
+            self.timer_end = None
+            self.mpv.stop()
+            self.pause_phone()
+            self.volume.fade = 0
+            self.volume.apply()
+            self.go_to_sleep()
 
     def count_play(self):
         """Half a track, or four minutes of it, counts as a play in Jellyfin, as in its own apps."""
@@ -478,12 +603,21 @@ class App:
             self.volume.apply()
 
     # buttons, settings, the clock
+    def notify(self, label, value, mono=False, legend=None):
+        self.notice = {"label": label, "value": value, "mono": mono, "legend": legend}
+        self.notice_until = self.now + OVERLAY_SECONDS
+
+    def go_to_sleep(self):
+        self.asleep = True
+        self.backlight = 0
+
     def wake(self, now):
         self.last_press = now
         self.asleep = False
         self.backlight = self.settings["brightness"]
 
     def handle(self, ev, now):
+        self.now = now
         if self.asleep:
             self.wake(now)
             return
@@ -491,16 +625,23 @@ class App:
         if ev in ("vol_up", "vol_down"):
             self.volume.set(self.volume.level + (1 if ev == "vol_up" else -1), self.settings["volume_cap"])
             self.settings.set("volume", self.volume.level)
-            self.overlay_until = now + OVERLAY_SECONDS
+            self.notify_volume()
         elif ev == "mute":
             self.volume.toggle_mute()
-            self.overlay_until = now + OVERLAY_SECONDS
+            self.notify_volume()
         elif ev == "home":
             del self.stack[1:]
         else:
             self.stack[-1].key(self, ev)
 
+    def notify_volume(self):
+        muted = self.volume.muted
+        self.notify("VOLYM", "Tyst" if muted else str(self.volume.level), mono=not muted,
+                    legend=[("A", "upp"), ("B", "ner"), ("A+B", "tyst")])
+
     def tick(self, now):
+        self.now = now
+        self.run_timer(now)
         minutes = self.settings["sleep_minutes"]
         if minutes and not self.asleep and now - self.last_press > minutes * 60:
             self.asleep = True
@@ -516,6 +657,8 @@ class App:
         if self.asleep:
             return {"kind": "off"}
         v = self.stack[-1].view(self)
-        if now < self.overlay_until:
-            v["volume"] = {"level": self.volume.level, "muted": self.volume.muted}
+        if now < self.notice_until:
+            v["notice"] = self.notice
+        if self.timer_end and v["kind"] == "playing" and v.get("times") and not v.get("paused"):
+            v["position"] = f"sover {self.timer_text()}"
         return v

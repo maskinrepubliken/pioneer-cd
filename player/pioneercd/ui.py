@@ -11,7 +11,8 @@ matters. The views:
      "paused": False, "legend": [...]}
     {"kind": "start"} and {"kind": "off"}
 
-and "volume": {"level": 60, "muted": False} on any view draws the volume panel over it.
+and "notice": {"label": "VOLYM", "value": "28", "mono": True, "legend": [...]} on any view
+draws a panel over it for a moment: the volume, Tyst, Pausad or Spelar.
 """
 import math
 import os
@@ -222,13 +223,14 @@ def draw_playing(d, v):
         d.text(((WIDTH - d.textlength(pos, font=TIMES())) / 2, y), pos, font=TIMES(), fill=INK_FAINT)
 
 
-def draw_volume(d, vol):
-    """The volume as a number, as on a TV; muted, the word Tyst."""
+def draw_notice(d, n):
+    """A small label over one big word or number, in a panel over the screen."""
     x0, y0, x1, y1 = 30, 17, WIDTH - 31, 61
     d.rounded_rectangle([x0, y0, x1, y1], radius=9, fill=PAPER_RAISED, outline=LINE_STRONG)
-    label = "VOLYM"
+    label = n["label"]
     d.text(((WIDTH - d.textlength(label, font=MONO())) / 2, y0 + 5), label, font=MONO(), fill=INK_FAINT)
-    value, f = ("Tyst", TITLE()) if vol["muted"] else (str(vol["level"]), font("Mono-SemiBold", 22))
+    value = n["value"]
+    f = font("Mono-SemiBold", 22) if n.get("mono") else TITLE()
     box = d.textbbox((0, 0), value, font=f)
     d.text(((WIDTH - (box[2] - box[0])) / 2 - box[0], y0 + 27 - (box[3] - box[1]) / 2 - box[1]),
            value, font=f, fill=INK)
@@ -253,11 +255,11 @@ def render(v, now=None):
         draw_start(d)
     else:
         {"list": draw_list, "message": draw_message, "playing": draw_playing}[kind](d, v)
-        if v.get("volume"):
-            legend(d, [("A", "upp"), ("B", "ner"), ("A+B", "tyst")])
-            draw_volume(d, v["volume"])
-        elif v.get("legend"):
-            legend(d, v["legend"])
+        notice = v.get("notice")
+        if notice and notice.get("legend") or v.get("legend"):
+            legend(d, notice.get("legend") if notice and notice.get("legend") else v["legend"])
+        if notice:
+            draw_notice(d, notice)
     for key in set(_since) - _seen:     # a text no longer shown starts over when it comes back
         del _since[key]
     d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=FRAME)   # dark edge, as the panel's own
