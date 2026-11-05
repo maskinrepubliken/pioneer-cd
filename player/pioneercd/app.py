@@ -648,15 +648,18 @@ class App:
             random.shuffle(rest)
             self.reorder([self.queue[i]] + rest)
         self.shuffled = not self.shuffled
+        self.notify("BLANDA", "På" if self.shuffled else "Av")
 
     def cycle_repeat(self):
         if self.playing == "cd":            # the disc is one file to mpv: again from the start, or not
             self.repeat = "no" if self.repeat == "list" else "list"
             self.mpv.set("loop-file", "inf" if self.repeat == "list" else "no")
+            self.notify("UPPREPA", "Skivan" if self.repeat == "list" else "Av")
             return
         self.repeat = {"no": "track", "track": "list", "list": "no"}[self.repeat]
         self.mpv.set("loop-file", "inf" if self.repeat == "track" else "no")
         self.mpv.set("loop-playlist", "inf" if self.repeat == "list" else "no")
+        self.notify("UPPREPA", {"no": "Av", "track": "Låten", "list": "Listan"}[self.repeat])
 
     def cycle_timer(self):
         minutes = round((self.timer_end - self.now) / 60) if self.timer_end else 0

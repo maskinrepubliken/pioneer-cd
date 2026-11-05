@@ -240,12 +240,13 @@ def draw_playing(d, v):
 
 
 def draw_notice(d, n):
-    """A small label over one big word or number, in a panel over all above the legend."""
-    x0, y0, x1, y1 = 2, 2, WIDTH - 3, BOTTOM - 2
+    """A small label over one big word or number, in a panel in the middle of the screen."""
+    x0, y0, x1, y1 = 3, 4, WIDTH - 4, HEIGHT - 5
+    d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], fill=PAPER)        # nothing behind it shows through
     d.rounded_rectangle([x0, y0, x1, y1], radius=4, fill=PAPER_RAISED, outline=LINE_STRONG)
     label = n["label"]
     lf = font("Mono-Regular", 10)
-    d.text(((WIDTH - d.textlength(label, font=lf)) / 2, y0 + 4), label, font=lf, fill=INK_FAINT)
+    d.text(((WIDTH - d.textlength(label, font=lf)) / 2, y0 + 6), label, font=lf, fill=INK_FAINT)
     value = n["value"]
     room = x1 - x0 - 10 - (26 if n.get("star") else 0)
     # As big as fits: numbers in mono, words in the interface face.
@@ -262,12 +263,12 @@ def draw_notice(d, n):
             cut = min(range(1, len(words)), key=lambda i: abs(len(" ".join(words[:i])) - len(value) / 2))
             for k, line in enumerate((" ".join(words[:cut]), " ".join(words[cut:]))):
                 line = fit(d, line, f, room)
-                d.text((WIDTH / 2, y0 + 28 + k * 21), line, font=f, fill=INK, anchor="mm")
+                d.text((WIDTH / 2, y0 + 32 + k * 21), line, font=f, fill=INK, anchor="mm")
             return
     value = fit(d, value, f, room)
     box = d.textbbox((0, 0), value, font=f)
     w = box[2] - box[0] + (26 if n.get("star") else 0)
-    x, mid = (WIDTH - w) / 2, y0 + 38
+    x, mid = (WIDTH - w) / 2, y0 + 42
     if n.get("star"):
         star(d, x + 10, mid, 11, INK, hollow=n["star"] == "empty")
         x += 26
@@ -293,11 +294,10 @@ def render(v, now=None):
         draw_start(d)
     else:
         {"list": draw_list, "message": draw_message, "playing": draw_playing}[kind](d, v)
-        notice = v.get("notice")
-        if notice and notice.get("legend") or v.get("legend"):
-            legend(d, notice.get("legend") if notice and notice.get("legend") else v["legend"])
-        if notice:
-            draw_notice(d, notice)
+        if v.get("notice"):
+            draw_notice(d, v["notice"])         # centred on the whole screen, over the legend too
+        elif v.get("legend"):
+            legend(d, v["legend"])
     for key in set(_since) - _seen:     # a text no longer shown starts over when it comes back
         del _since[key]
     d.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=FRAME)   # dark edge, as the panel's own
