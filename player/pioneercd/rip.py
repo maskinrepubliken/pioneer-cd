@@ -8,6 +8,11 @@ stopped (SIGSTOP) the moment the disc plays again and goes on (SIGCONT)
 when it stops or pauses. ffmpeg encodes each track to MP3, 320 kbit/s with
 ID3v2.3 tags, which every player plays (FLAC did not play on the phones here).
 
+A cover goes with it: <state>/cd/<disc id>.jpg if there is one (put there
+by hand, say), or else the front from the Cover Art Archive when MusicBrainz
+knows the release. It is folder.jpg beside the tracks, which Jellyfin reads,
+and is embedded in each MP3, which phones show.
+
 When all tracks are saved the album goes to the server as a tar stream over
 ssh, with a key the server only lets unpack into its Pioneer CD folder, and
 Jellyfin is told the folder is new. What is saved stays on the Pi:
@@ -21,6 +26,7 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.request
 
 from . import cd
 
@@ -76,6 +82,7 @@ class Ripper:
             artist, title = folders(album)
             where = os.path.join(self.root, discid, artist, title)
             os.makedirs(where, exist_ok=True)
+            cover = self._cover(album, where)
             tracks = album["tracks"]
             for k, track in enumerate(tracks, 1):
                 name = f"{track['number']:02d} {safe(track['title'])}.mp3"
@@ -86,7 +93,7 @@ class Ripper:
                 if not self._read(discid, track["number"], wav):
                     self.status[discid] = "avbruten"
                     return
-                self._encode(wav, os.path.join(where, name), album, track, len(tracks))
+                self._encode(wav, os.path.join(where, name), album, track, len(tracks), cover)
             self.status[discid] = "skickar"
             self._send(discid, artist, title)
             with open(os.path.join(self.root, discid, "done.json"), "w") as f:
@@ -127,13 +134,40 @@ class Ripper:
         os.replace(wav + ".part", wav)
         return True
 
-    def _encode(self, wav, mp3, album, track, total):
+    def _cover(self, album, where):
+        """folder.jpg in the album's folder: ours for the disc, or the Cover Art Archive's; None for none."""
+        path = os.path.join(where, "folder.jpg")
+        if os.path.exists(path):
+            return path
+        ours = os.path.join(os.path.dirname(self.root), "cd", album["discid"] + ".jpg")
+        try:
+            if os.path.exists(ours):
+                with open(ours, "rb") as f:
+                    data = f.read()
+            elif album.get("musicbrainz_release"):
+                url = f"https://coverartarchive.org/release/{album['musicbrainz_release']}/front-500"
+                req = urllib.request.Request(url, headers={"User-Agent": cd.USER_AGENT})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    data = r.read()
+            else:
+                return None
+        except OSError as e:
+            print("rip: cover:", repr(e), flush=True)
+            return None
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def _encode(self, wav, mp3, album, track, total, cover=None):
         tags = {"title": track["title"], "artist": track["artist"] or album["artist"],
                 "album": album["title"], "album_artist": album["artist"], "track": f"{track['number']}/{total}",
                 "date": album.get("year") or "", "MusicBrainz Album Id": album.get("musicbrainz_release") or "",
                 "MusicBrainz Disc Id": album["discid"], "BARCODE": album.get("barcode") or ""}
-        args = ["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", wav,
-                "-codec:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3", "-f", "mp3"]
+        args = ["nice", "-n", "15", "ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", wav]
+        if cover:           # the cover embedded, as phones want it: an attached picture, the front
+            args += ["-i", cover, "-map", "0:a", "-map", "1:v", "-codec:v", "copy", "-disposition:v", "attached_pic",
+                     "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"]
+        args += ["-codec:a", "libmp3lame", "-b:a", "320k", "-id3v2_version", "3", "-f", "mp3"]
         for k, v in tags.items():
             if v:
                 args += ["-metadata", f"{k}={v}"]

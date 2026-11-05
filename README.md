@@ -119,7 +119,9 @@ lets do one thing only, in `~/.ssh/authorized_keys` there:
 
     restrict,command="cd '/Volumes/Collections/Musik/Pioneer CD' && exec /usr/bin/tar -xf - --no-same-owner" ssh-ed25519 … pioneer-cd upload
 
-and Jellyfin is told the folder is new (`/Library/Media/Updated`). Jellyfin has no API to
+and Jellyfin is told the folder is new (`/Library/Media/Updated`). A cover goes with it,
+as folder.jpg and embedded in the MP3s: `/var/lib/pioneer-cd/cd/<disc id>.jpg` if there is
+one, or the front from the Cover Art Archive when MusicBrainz knows the release. Jellyfin has no API to
 upload music: it reads folders on its server.
 
 ## Sound
