@@ -19,6 +19,7 @@ OVERLAY_SECONDS = 2
 TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
 FADE_SECONDS = 30                         # the timer's last half minute fades out
 FADE_DB = 40
+OPTIONS_SECONDS = 4                       # Val goes back to Spelas nu after this long without a press
 
 
 def clock(seconds):
@@ -266,7 +267,8 @@ class BluetoothScreen:
 
 class OptionsScreen:
     """Val, right from Spelas nu: Blanda and Upprepa for the library's queue,
-    and for every source Sovtimer and Vila. The middle changes a row."""
+    and for every source Sovtimer and Vila. The middle changes a row; a few
+    seconds without a press and it goes back to Spelas nu by itself."""
     REPEAT = {"no": "av", "track": "låten", "list": "listan"}
 
     def __init__(self, source):
@@ -644,6 +646,8 @@ class App:
     def tick(self, now):
         self.now = now
         self.run_timer(now)
+        if isinstance(self.stack[-1], OptionsScreen) and now - self.last_press > OPTIONS_SECONDS:
+            self.back()
         minutes = self.settings["sleep_minutes"]
         if minutes and not self.asleep and now - self.last_press > minutes * 60:
             self.asleep = True
