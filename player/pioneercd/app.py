@@ -379,6 +379,9 @@ class App:
         self.bt_was_playing = False
         self.disc = None            # "audio" or "data" while a disc is in, from cd.watch()
         self.cd_album = None        # the disc's tracks and names, once read
+        self.disc_first = True      # the first word from cd.watch() is the disc in at start, not put in
+        self.disc_put_in = None     # a disc just put in and read, for tick() to act on
+        self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
@@ -702,18 +705,38 @@ class App:
         a disc out stops it, if it played."""
         self.disc = disc
         self.cd_album = None
+        first, self.disc_first = self.disc_first, False
         if disc == "audio":
             def run():
                 try:
                     self.cd_album = cd.album(cd.read_toc(), self.state)
                 except Exception as e:
                     print("cd:", repr(e), flush=True)
+                    return
+                if first:
+                    self.last_disc = self.cd_album["discid"]
+                else:
+                    self.disc_put_in = self.cd_album["discid"]
             threading.Thread(target=run, daemon=True).start()
         elif self.playing == "cd":
             self.mpv.stop()
             self.playing = None
             if any(isinstance(s, (CdScreen, CdPlayingScreen)) for s in self.stack):
                 del self.stack[1:]
+
+    def disc_in(self, now):
+        """A disc put in plays at once if it is another than the last one; the
+        same one again opens Home with CD chosen. The screen lights either way."""
+        discid, self.disc_put_in = self.disc_put_in, None
+        self.wake(now)
+        del self.stack[1:]
+        if discid != self.last_disc:
+            self.last_disc = discid
+            self.play_cd(0)
+        else:
+            self.refresh_home()
+            home = self.stack[0]
+            home.sel = next((i for i, r in enumerate(home.rows) if r["id"] == "cd"), 0)
 
     def cd_track(self):
         """The track playing, by where in the disc the time is: (index, track)."""
@@ -860,6 +883,8 @@ class App:
     def tick(self, now):
         self.now = now
         self.run_timer(now)
+        if self.disc_put_in:
+            self.disc_in(now)
         if isinstance(self.stack[-1], OptionsScreen) and now - self.last_press > OPTIONS_SECONDS:
             self.back()
         minutes = self.settings["sleep_minutes"]

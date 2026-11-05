@@ -97,7 +97,10 @@ goes in a USB charger of its own, not in the Pi.
 The player reads the disc's table of contents (libdiscid), plays the disc with mpv
 (`cdda://`, a chapter a track) and names the tracks from, in turn: its own file for the disc,
 `/var/lib/pioneer-cd/cd/<disc id>.json`, which can be written by hand; MusicBrainz, by the
-disc's id or the tracks' lengths (what it says is kept in that file); or Spår 1, 2, ….
+disc's id, the tracks' lengths or the barcode (what it says is kept in that file); the disc's
+own CD-Text; or Spår 1, 2, ….
+A disc put in plays at once if it is another than the last one; the same one again opens Home
+with CD chosen.
 
 ## Sound
 
