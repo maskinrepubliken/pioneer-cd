@@ -20,7 +20,8 @@ OVERLAY_SECONDS = 2
 TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
 FADE_SECONDS = 30                         # the timer's last half minute fades out
 FADE_DB = 40
-OPTIONS_SECONDS = 4                       # Val goes back to Spelas nu after this long without a press
+OPTIONS_SECONDS = 4
+EMPTY_SECONDS = 3                         # how long the tray is shut empty to count as the disc taken out                       # Val goes back to Spelas nu after this long without a press
 
 
 def clock(seconds):
@@ -386,6 +387,7 @@ class App:
         self.disc_first = True      # the first word from cd.watch() is the disc in at start, not put in
         self.disc_put_in = None     # a disc just put in and read, for tick() to act on
         self.disc_emptied = False   # the tray was shut with no disc since the last disc
+        self.empty_since = None
         self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
@@ -713,8 +715,13 @@ class App:
         self.cd_album = None
         self.cd_error = False
         first, self.disc_first = self.disc_first, False
+        # Shut and empty for a while, not for a moment while a shut tray is read.
         if disc == "empty":
-            self.disc_emptied = True
+            self.empty_since = time.monotonic()
+        elif self.empty_since is not None:
+            if time.monotonic() - self.empty_since >= EMPTY_SECONDS:
+                self.disc_emptied = True
+            self.empty_since = None
         if disc == "audio":
             def run():
                 try:
