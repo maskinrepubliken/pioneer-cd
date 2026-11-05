@@ -398,10 +398,6 @@ class App:
         self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
-        self.ripper = rip.Ripper(self.state, config.get("upload"), self.jf,
-                                 playing=lambda: self.playing == "cd" and not self.mpv.props.get("idle-active")
-                                 and not self.mpv.props.get("pause"),
-                                 disc_id=lambda: self.cd_album["discid"] if self.disc == "audio" and self.cd_album else None)
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
@@ -429,6 +425,10 @@ class App:
         self.asleep = False
         self.backlight = settings["brightness"]
         self.draw = lambda view: None   # set by main: shows a view at once (for "Laddar")
+        self.ripper = rip.Ripper(self.state, config.get("upload"), self.jf,
+                                 playing=lambda: self.playing == "cd" and not self.mpv.props.get("idle-active")
+                                 and not self.mpv.props.get("pause"),
+                                 disc_id=lambda: self.cd_album["discid"] if self.disc == "audio" and self.cd_album else None)
         self.stack = [ListScreen("Källa", [], self.pick_source, root=True)]
         self.refresh_home()
 
