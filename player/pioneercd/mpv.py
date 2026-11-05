@@ -13,7 +13,7 @@ import threading
 import time
 
 OBSERVED = ("pause", "time-pos", "duration", "playlist-pos", "playlist-count", "idle-active", "paused-for-cache",
-            "media-title")
+            "media-title", "core-idle")
 
 
 class Mpv:

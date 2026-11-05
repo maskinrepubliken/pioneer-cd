@@ -21,7 +21,8 @@ TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
 FADE_SECONDS = 30                         # the timer's last half minute fades out
 FADE_DB = 40
 OPTIONS_SECONDS = 4
-EMPTY_SECONDS = 3                         # how long the tray is shut empty to count as the disc taken out                       # Val goes back to Spelas nu after this long without a press
+EMPTY_SECONDS = 3
+WAIT_SECONDS = 0.6                        # silent this long while playing, and the screen says Läser or Laddar                         # how long the tray is shut empty to count as the disc taken out                       # Val goes back to Spelas nu after this long without a press
 
 
 def clock(seconds):
@@ -388,6 +389,7 @@ class App:
         self.disc_put_in = None     # a disc just put in and read, for tick() to act on
         self.disc_emptied = False   # the tray was shut with no disc since the last disc
         self.empty_since = None
+        self.waiting_since = None   # since when mpv waits for the disc or the network
         self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
@@ -907,6 +909,10 @@ class App:
     def tick(self, now):
         self.now = now
         self.run_timer(now)
+        p = self.mpv.props
+        waiting = (self.playing in ("cd", "jellyfin", "radio") and not p.get("idle-active")
+                   and not p.get("pause") and bool(p.get("core-idle")))
+        self.waiting_since = (self.waiting_since or now) if waiting else None
         if self.disc_out:
             self.disc_taken_out()
         if self.disc_put_in:
@@ -930,6 +936,11 @@ class App:
         v = self.stack[-1].view(self)
         if now < self.notice_until:
             v["notice"] = self.notice
+        elif self.waiting_since and now - self.waiting_since > WAIT_SECONDS and v["kind"] == "playing":
+            # The drive reads (long at the start, a moment between tracks) or the network loads.
+            dots = "." * (1 + int(now * 2) % 3)
+            label, word = {"cd": ("CD", "Läser"), "radio": ("RADIO", "Laddar")}.get(self.playing, ("BIBLIOTEK", "Laddar"))
+            v["notice"] = {"label": label, "value": word + dots.ljust(3)}
         if self.timer_end and v["kind"] == "playing" and v.get("times") and not v.get("paused"):
             v["position"] = f"sover {self.timer_text()}"
         return v
