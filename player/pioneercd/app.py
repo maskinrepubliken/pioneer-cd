@@ -14,7 +14,7 @@ import subprocess
 import threading
 import time
 
-from . import cd, jellyfin, radio
+from . import cd, jellyfin, radio, rip
 
 OVERLAY_SECONDS = 2
 TIMER_MINUTES = [0, 10, 20, 30, 50, 60]   # Sovtimer's steps; 0 is off
@@ -290,7 +290,9 @@ class CdScreen:
         return self.list.view(app)
 
     def key(self, app, ev):
-        if self.list:
+        if ev == "right" and app.cd_album:
+            app.push(OptionsScreen("cd"))
+        elif self.list:
             self.list.key(app, ev)
         elif ev == "left":
             app.back()
@@ -343,7 +345,8 @@ class OptionsScreen:
             rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
                      ("repeat", "Upprepa", self.REPEAT[app.repeat])]
         elif self.source == "cd":
-            rows += [("repeat", "Upprepa", "skivan" if app.repeat == "list" else "av")]
+            rows += [("repeat", "Upprepa", "skivan" if app.repeat == "list" else "av"),
+                     ("save", "Spara skivan", app.ripper.state_of(app.cd_album["discid"]) if app.cd_album else "")]
         return rows + [("timer", "Sovtimer", app.timer_text()), ("sleep", "Vila", "")]
 
     def view(self, app):
@@ -364,6 +367,8 @@ class OptionsScreen:
                 app.toggle_shuffle()
             elif what == "repeat":
                 app.cycle_repeat()
+            elif what == "save":
+                app.save_disc()
             elif what == "timer":
                 app.cycle_timer()
             elif what == "sleep":
@@ -393,6 +398,10 @@ class App:
         self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
+        self.ripper = rip.Ripper(self.state, config.get("upload"), self.jf,
+                                 playing=lambda: self.playing == "cd" and not self.mpv.props.get("idle-active")
+                                 and not self.mpv.props.get("pause"),
+                                 disc_id=lambda: self.cd_album["discid"] if self.disc == "audio" and self.cd_album else None)
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
@@ -428,8 +437,10 @@ class App:
         rows = [{"label": "Radio", "id": "radio"}, {"label": "Bibliotek", "id": "jellyfin"},
                 {"label": "Blåtand", "id": "bluetooth"}]
         if self.disc == "audio":
+            saving = self.ripper.state_of(self.cd_album["discid"]) if self.cd_album else ""
             rows.insert(0, {"label": "CD", "id": "cd",
-                            "value": self.cd_album["title"] if self.cd_album else "läser"})
+                            "value": (f"sparar {saving}" if saving[:1].isdigit() else self.cd_album["title"])
+                            if self.cd_album else "läser"})
         if self.bt_playing():
             rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
         elif self.playing and not self.mpv.props.get("idle-active"):
@@ -755,6 +766,19 @@ class App:
             threading.Thread(target=run, daemon=True).start()
         else:
             self.disc_out = True            # for tick(): from the main loop, not this thread
+
+    def save_disc(self):
+        """Spara skivan: saves the disc in the background while it does not play, then sends it on."""
+        album = self.cd_album
+        if not album:
+            return
+        if self.ripper.done(album["discid"]):
+            self.notify("SKIVAN", "Sparad")
+        elif self.ripper.start(album):
+            playing = self.ripper.playing()
+            self.notify("SPARAR SKIVAN", "Väntar" if playing else "Startar")
+        else:
+            self.notify("SPARAR SKIVAN", self.ripper.state_of(album["discid"]) or "Pågår")
 
     def disc_taken_out(self):
         """Stops the disc if it played, and closes the CD screens, whichever was open."""

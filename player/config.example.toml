@@ -12,6 +12,16 @@ brightness = 100
 sleep_minutes = 10
 bluetooth_boost = 8
 
+[upload]
+# Where Spara skivan sends a saved CD: ssh to host with key, which the server
+# lets do one thing only, unpack a tar into its Pioneer CD folder (folder,
+# for Jellyfin to read in). Without host the CDs stay on the Pi.
+#   On the server, in ~/.ssh/authorized_keys:
+#   restrict,command="cd '/Volumes/Collections/Musik/Pioneer CD' && exec /usr/bin/tar -xf - --no-same-owner" ssh-ed25519 …
+host = ""
+key = "/var/lib/pioneer-cd/ssh/id_ed25519"
+folder = "/Volumes/Collections/Musik/Pioneer CD"
+
 [jellyfin]
 # Base URL of Jellyfin, an API key (Jellyfin: Dashboard → API Keys) and the
 # user whose library is shown (empty: the first administrator). With no key

@@ -5,7 +5,7 @@ set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 
 apt-get install -y mpv fonts-ibm-plex python3-spidev python3-smbus2 python3-pil python3-numpy python3-libgpiod \
-    bluez-alsa-utils bluez-tools python3-dbus python3-libdiscid
+    bluez-alsa-utils bluez-tools python3-dbus python3-libdiscid cdparanoia flac
 raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
@@ -24,6 +24,12 @@ sed -i -e 's/^#\?Name = .*/Name = Pioneer CD/' -e 's/^#\?Class = .*/Class = 0x20
     -e 's/^#\?DiscoverableTimeout = .*/DiscoverableTimeout = 0/' /etc/bluetooth/main.conf
 install -D -m 644 "$REPO/system/bluealsa-sink.conf" /etc/systemd/system/bluealsa.service.d/pioneer-cd.conf
 install -m 644 "$REPO/system/pioneer-cd-bt-agent.service" /etc/systemd/system/pioneer-cd-bt-agent.service
+
+# Spara skivan sends saved CDs to the server with a key of its own (see [upload]).
+install -d -o pi -g pi /var/lib/pioneer-cd
+install -d -m 700 -o pi -g pi /var/lib/pioneer-cd/ssh
+[ -f /var/lib/pioneer-cd/ssh/id_ed25519 ] || \
+    sudo -u pi ssh-keygen -q -t ed25519 -N "" -C "pioneer-cd upload" -f /var/lib/pioneer-cd/ssh/id_ed25519
 
 install -d -m 755 /etc/pioneer-cd
 if [ ! -s /etc/pioneer-cd/config.toml ]; then

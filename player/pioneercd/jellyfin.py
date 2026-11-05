@@ -81,6 +81,13 @@ class Jellyfin:
         return self._items(ParentId=item["Id"], IncludeItemTypes="Audio",
                            SortBy="ParentIndexNumber,IndexNumber,SortName")
 
+    def media_updated(self, path):
+        """Tells Jellyfin a folder on the server is new, so it reads it in."""
+        body = json.dumps({"Updates": [{"Path": path, "UpdateType": "Created"}]}).encode()
+        req = urllib.request.Request(f"{self.url}/Library/Media/Updated", data=body, method="POST",
+                                     headers={"Authorization": self.auth, "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=8).close()
+
     def stream_url(self, track):
         return f"{self.url}/Audio/{track['Id']}/stream?static=true"
 

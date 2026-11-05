@@ -105,6 +105,21 @@ A disc put in plays at once: another than the last one, or the same one taken ou
 (the drive says it was shut empty in between). Opening and shutting the tray with the disc in
 does nothing.
 
+## Saving a CD
+
+Spara skivan in Val (right on a CD) saves the disc as FLAC on the Pi and then into Jellyfin.
+The drive reads one place at a time, so the disc is saved only while it does not play:
+cdparanoia (its fast mode; the paranoid ones read slower than the music plays on this drive)
+is stopped while the disc plays and goes on when it is paused or done. The files are in
+`/var/lib/pioneer-cd/cd-rips/<disc id>/<artist>/<album>/`. Saved, the album goes as a tar
+stream over ssh to the server named in `[upload]`, with a key of the Pi's own that the server
+lets do one thing only, in `~/.ssh/authorized_keys` there:
+
+    restrict,command="cd '/Volumes/Collections/Musik/Pioneer CD' && exec /usr/bin/tar -xf - --no-same-owner" ssh-ed25519 … pioneer-cd upload
+
+and Jellyfin is told the folder is new (`/Library/Media/Updated`). Jellyfin has no API to
+upload music: it reads folders on its server.
+
 ## Sound
 
 The USB sound card is the default output, through a volume control of the player's own:

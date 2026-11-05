@@ -196,7 +196,7 @@ def album(toc, state, look_up=True):
         extra = named[i] if i < len(named) else {}
         tracks.append({**t, "title": extra.get("title") or f"Spår {t['number']}",
                        "artist": extra.get("artist") or names.get("artist") or ""})
-    return {"discid": toc["discid"], "submit": toc["submit"], "file": path,
+    return {"discid": toc["discid"], "submit": toc["submit"], "file": path, "barcode": toc.get("barcode", ""),
             "title": names.get("title") or ("CD" if names else "Okänd skiva"), "artist": names.get("artist") or "",
             "year": names.get("year") or "", "source": names.get("source") or "",
             "musicbrainz_release": names.get("musicbrainz_release"), "tracks": tracks}
