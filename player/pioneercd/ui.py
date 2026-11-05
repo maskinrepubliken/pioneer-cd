@@ -248,6 +248,9 @@ def draw_notice(d, n):
     lf = font("Mono-Regular", 10)
     d.text(((WIDTH - d.textlength(label, font=lf)) / 2, y0 + 6), label, font=lf, fill=INK_FAINT)
     value = n["value"]
+    if n.get("star") and not value:     # only the star, big: filled to keep, hollow to forget
+        star(d, WIDTH / 2, y0 + 42, 22, INK, hollow=n["star"] == "empty")
+        return
     room = x1 - x0 - 10 - (26 if n.get("star") else 0)
     # As big as fits: numbers in mono, words in the interface face.
     sizes = ((font("Mono-SemiBold", s) for s in (34, 28, 22, 18)) if n.get("mono")

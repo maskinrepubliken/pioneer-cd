@@ -604,7 +604,7 @@ class App:
             f.flush()
             os.fsync(f.fileno())
         self.likes.add(self._like_key(item))
-        self.notify("INKORG", "Minns", star="filled")
+        self.notify("MINNS", "", star="filled")
 
     def forget(self):
         """Takes what plays out of the inbox again: the file is written beside and renamed over."""
@@ -621,7 +621,7 @@ class App:
             os.fsync(f.fileno())
         os.replace(self.inbox + ".tmp", self.inbox)
         self.likes.discard(key)
-        self.notify("INKORG", "Glöms", star="empty")
+        self.notify("GLÖMS", "", star="empty")
     def reorder(self, tracks):
         """Puts tracks in mpv's playlist around the track that plays, which plays on."""
         i = self.mpv.props.get("playlist-pos")
