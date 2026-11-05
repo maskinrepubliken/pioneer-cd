@@ -345,9 +345,11 @@ class OptionsScreen:
             rows += [("shuffle", "Blanda", "på" if app.shuffled else "av"),
                      ("repeat", "Upprepa", self.REPEAT[app.repeat])]
         elif self.source == "cd":
-            rows += [("repeat", "Upprepa", "skivan" if app.repeat == "list" else "av"),
-                     ("save", "Spara skivan", app.ripper.state_of(app.cd_album["discid"]) if app.cd_album else "")]
-        return rows + [("timer", "Sovtimer", app.timer_text()), ("sleep", "Vila", "")]
+            rows += [("repeat", "Upprepa", "skivan" if app.repeat == "list" else "av")]
+        rows += [("timer", "Sovtimer", app.timer_text()), ("sleep", "Vila", "")]
+        if self.source == "cd" and app.cd_album:         # last: it is seldom wanted
+            rows += [("save", "Spara skivan", app.ripper.state_of(app.cd_album["discid"]))]
+        return rows
 
     def view(self, app):
         rows = self.rows(app)
