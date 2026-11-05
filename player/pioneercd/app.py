@@ -494,6 +494,7 @@ class App:
         if self.volume.fade:
             self.volume.fade = 0
             self.volume.apply()
+        self.notify("SOVTIMER", f"{nxt} min" if nxt else "Av", mono=True, legend=[("●", "ändra")])
 
     def timer_text(self):
         if not self.timer_end:
