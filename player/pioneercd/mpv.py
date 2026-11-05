@@ -12,7 +12,8 @@ import subprocess
 import threading
 import time
 
-OBSERVED = ("pause", "time-pos", "duration", "playlist-pos", "playlist-count", "idle-active", "paused-for-cache")
+OBSERVED = ("pause", "time-pos", "duration", "playlist-pos", "playlist-count", "idle-active", "paused-for-cache",
+            "media-title")
 
 
 class Mpv:

@@ -20,12 +20,13 @@ url = "http://100.123.142.8:8096"
 api_key = ""
 user = ""
 
-# Sveriges Radio's channels, by SR's id (api.sr.se/api/v2/channels). Without
-# this list: P1, P2, P3 and P4 Sjuhärad.
+# The radio's channels, in order: Sveriges Radio's by id
+# (api.sr.se/api/v2/channels), other stations by their stream's address.
+# Without this list: P1, P2, P3, P4 Sjuhärad, Radioapans knattekanal,
+# Lugna Favoriter and Bandit Rock (pioneercd/radio.py).
 # [radio]
 # channels = [
 #   { id = 132, name = "P1" },
-#   { id = 163, name = "P2" },
-#   { id = 164, name = "P3" },
-#   { id = 701, name = "P4" },   # P4 Stockholm
+#   { id = 701, name = "P4 Stockholm" },
+#   { name = "Bandit Rock", url = "https://fm02-ice.stream.khz.se/fm02_mp3" },
 # ]

@@ -196,10 +196,16 @@ class RadioScreen:
     stops the stream, and playing again picks it up live."""
 
     def view(self, app):
-        cid, name = app.channels[app.channel]
-        info = app.radio_info.get(cid, {})
-        title, when = info.get("now", (name, ""))
-        nxt = info.get("next")
+        ch = app.channels[app.channel]
+        name = ch["name"]
+        if "id" in ch:                  # Sveriges Radio: the programme, now and next
+            info = app.radio_info.get(ch["id"], {})
+            title, when = info.get("now", (name, ""))
+            nxt = info.get("next")
+        else:                           # another station: the song its stream names
+            song = app.mpv.props.get("media-title") or ""
+            named = song and song not in (ch["url"], ch["url"].rsplit("/", 1)[-1])   # before that, the file
+            title, when, nxt = (song if named else name), "", None
         stopped = app.mpv.props.get("idle-active")
         return {"kind": "playing", "title": title, "subtitle": f"{name} · {when}" if when else name,
                 "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
@@ -217,7 +223,7 @@ class RadioScreen:
             app.push(OptionsScreen("radio"))
         elif ev in ("up", "down"):
             app.play_radio((app.channel + (1 if ev == "down" else -1)) % len(app.channels))
-            app.notify("KANAL", app.channels[app.channel][1])
+            app.notify("KANAL", app.channels[app.channel]["name"])
         elif ev == "left":
             app.back()
 
@@ -319,7 +325,7 @@ class App:
         jf = config.get("jellyfin", {})
         self.jf = jellyfin.Jellyfin(jf["url"], jf["api_key"], jf.get("user", "")) if jf.get("api_key") else None
         chans = config.get("radio", {}).get("channels")
-        self.channels = [(c["id"], c["name"]) for c in chans] if chans else radio.CHANNELS
+        self.channels = chans or radio.CHANNELS
         self.playing = None         # "radio", "jellyfin" or None
         self.queue = []
         self.counted = set()        # queue positions already counted as played in Jellyfin
@@ -347,7 +353,7 @@ class App:
             rows.insert(0, {"label": "Spelas nu", "id": "playing", "value": "Blåtand"})
         elif self.playing and not self.mpv.props.get("idle-active"):
             rows.insert(0, {"label": "Spelas nu", "id": "playing",
-                            "value": self.channels[self.channel][1] if self.playing == "radio" else "Bibliotek"})
+                            "value": self.channels[self.channel]["name"] if self.playing == "radio" else "Bibliotek"})
         home = self.stack[0]
         if [r["id"] for r in home.rows] != [r["id"] for r in rows]:
             home.sel = 0
@@ -543,16 +549,18 @@ class App:
         self.channel = index
         self.playing = "radio"
         self.queue = []
-        self.mpv.play([radio.stream_url(self.channels[index][0])])
+        self.mpv.play([radio.stream_url(self.channels[index])])
         self.radio_fetched = None       # fetch what is on now
 
     def fetch_radio(self):
         def run():
-            for cid, _ in self.channels:
+            for ch in self.channels:
+                if "id" not in ch:
+                    continue
                 try:
-                    self.radio_info[cid] = radio.now_next(cid)
+                    self.radio_info[ch["id"]] = radio.now_next(ch["id"])
                 except Exception as e:
-                    print("radio:", cid, repr(e), flush=True)
+                    print("radio:", ch["id"], repr(e), flush=True)
         threading.Thread(target=run, daemon=True).start()
 
     # bluetooth: one source at a time, so a phone that starts playing stops

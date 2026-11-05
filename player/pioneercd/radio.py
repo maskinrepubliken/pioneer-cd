@@ -1,17 +1,27 @@
-"""Sveriges Radio: the live MP3 of a channel, and what is on now and next
-from SR's open API. The same streams as the radio in Pioneer TV."""
+"""The radio: Sveriges Radio's live MP3s, with what is on now and next from
+SR's open API (the same streams as the radio in Pioneer TV), and other
+stations by their stream's address, which tell the song playing in the
+stream itself (mpv's media-title)."""
 import datetime
 import json
 import re
 import urllib.request
 
-# Channel ids are SR's. P4 is regional: 206 is P4 Sjuhärad, as in Pioneer TV
-# (701 is P4 Stockholm). Other channels go in the config.
-CHANNELS = [(132, "P1"), (163, "P2"), (164, "P3"), (206, "P4")]
+# An SR channel by its id (api.sr.se/api/v2/channels), another station by
+# its stream. P4 is regional: 206 is P4 Sjuhärad. The config can replace the list.
+CHANNELS = [
+    {"id": 132, "name": "P1"},
+    {"id": 163, "name": "P2"},
+    {"id": 164, "name": "P3"},
+    {"id": 206, "name": "P4 Sjuhärad"},
+    {"id": 2755, "name": "Radioapans knattekanal"},
+    {"name": "Lugna Favoriter", "url": "https://fm03-ice.stream.khz.se/fm03_mp3"},
+    {"name": "Bandit Rock", "url": "https://fm02-ice.stream.khz.se/fm02_mp3"},
+]
 
 
 def stream_url(channel):
-    return f"https://sverigesradio.se/topsy/direkt/srapi/{channel}.mp3"
+    return channel.get("url") or f"https://sverigesradio.se/topsy/direkt/srapi/{channel['id']}.mp3"
 
 
 def _time(value):
