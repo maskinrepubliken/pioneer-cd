@@ -650,18 +650,20 @@ class App:
             random.shuffle(rest)
             self.reorder([self.queue[i]] + rest)
         self.shuffled = not self.shuffled
-        self.notify("BLANDA", "På" if self.shuffled else "Av")
+        self.notify("BLANDA", "Blandar", strike=not self.shuffled)
 
     def cycle_repeat(self):
         if self.playing == "cd":            # the disc is one file to mpv: again from the start, or not
             self.repeat = "no" if self.repeat == "list" else "list"
             self.mpv.set("loop-file", "inf" if self.repeat == "list" else "no")
-            self.notify("UPPREPA", "Skivan" if self.repeat == "list" else "Av")
+            self.notify("UPPREPA SKIVAN" if self.repeat == "list" else "UPPREPA", "Upprepar",
+                        strike=self.repeat == "no")
             return
         self.repeat = {"no": "track", "track": "list", "list": "no"}[self.repeat]
         self.mpv.set("loop-file", "inf" if self.repeat == "track" else "no")
         self.mpv.set("loop-playlist", "inf" if self.repeat == "list" else "no")
-        self.notify("UPPREPA", {"no": "Av", "track": "Låten", "list": "Listan"}[self.repeat])
+        self.notify({"no": "UPPREPA", "track": "UPPREPA LÅTEN", "list": "UPPREPA LISTAN"}[self.repeat],
+                    "Upprepar", strike=self.repeat == "no")
 
     def cycle_timer(self):
         minutes = round((self.timer_end - self.now) / 60) if self.timer_end else 0
@@ -670,7 +672,7 @@ class App:
         if self.volume.fade:
             self.volume.fade = 0
             self.volume.apply()
-        self.notify("SOVTIMER", f"{nxt} min" if nxt else "Av", mono=True, legend=[("●", "ändra")])
+        self.notify("SOVTIMER", f"{nxt} min" if nxt else "Sover", mono=bool(nxt), strike=not nxt)
 
     def timer_text(self):
         if not self.timer_end:
@@ -870,8 +872,10 @@ class App:
             self.volume.apply()
 
     # buttons, settings, the clock
-    def notify(self, label, value, mono=False, legend=None, star=False):
-        self.notice = {"label": label, "value": value, "mono": mono, "legend": legend, "star": star}
+    def notify(self, label, value, mono=False, legend=None, star=False, strike=False):
+        """A notice for a moment. Off is never the word Av: it is the on word, struck through."""
+        self.notice = {"label": label, "value": value, "mono": mono, "legend": legend, "star": star,
+                       "strike": strike}
         self.notice_until = self.now + OVERLAY_SECONDS
 
     def go_to_sleep(self):

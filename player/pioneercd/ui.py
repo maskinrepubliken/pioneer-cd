@@ -273,6 +273,8 @@ def draw_notice(d, n):
         star(d, x + 10, mid, 11, INK, hollow=n["star"] == "empty")
         x += 26
     d.text((x - box[0], mid - (box[3] - box[1]) / 2 - box[1]), value, font=f, fill=INK)
+    if n.get("strike"):     # off: the word struck through
+        d.line([(x - 3, mid), (x + box[2] - box[0] + 3, mid)], fill=INK, width=2)
 
 
 def draw_start(d):
