@@ -72,7 +72,7 @@ Then put Jellyfin's address and an API key (Jellyfin: Dashboard → API Keys) in
 `/etc/pioneer-cd/config.toml` and `sudo systemctl restart pioneer-cd`. Logs:
 `journalctl -u pioneer-cd -f`.
 
-The buttons: up and down move in lists, and change track or channel while something plays
+Radio starts P1 at once. The buttons: up and down move in lists, and change track or channel while something plays
 (held, they jump a letter at a time); the middle picks, plays and pauses, and held goes Home;
 left goes back, everywhere. A and B set the volume, both together mute. After ten minutes
 without a press the screen goes dark; the first press only lights it. Right on Spelas nu opens Val: Blanda

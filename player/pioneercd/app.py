@@ -191,7 +191,7 @@ class PlayingScreen:
 
 
 class RadioScreen:
-    """Radio, spelar: a live channel. Up and down change channel; pausing
+    """Radio: a live channel, P1 first. Up and down change channel; pausing
     stops the stream, and playing again picks it up live."""
 
     def view(self, app):
@@ -202,7 +202,7 @@ class RadioScreen:
         stopped = app.mpv.props.get("idle-active")
         return {"kind": "playing", "title": title, "subtitle": f"{name} · {when}" if when else name,
                 "line": f"Nästa {nxt[1]} {nxt[0]}" if nxt else "", "paused": stopped,
-                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "lista"), ("▶", "val")]}
+                "legend": [("●", "spela" if stopped else "paus"), ("▲▼", "kanal"), ("◀", "hem"), ("▶", "val")]}
 
     def key(self, app, ev):
         if ev == "center":
@@ -216,6 +216,7 @@ class RadioScreen:
             app.push(OptionsScreen("radio"))
         elif ev in ("up", "down"):
             app.play_radio((app.channel + (1 if ev == "down" else -1)) % len(app.channels))
+            app.notify("KANAL", app.channels[app.channel][1])
         elif ev == "left":
             app.back()
 
@@ -365,10 +366,10 @@ class App:
             else:
                 self.push(RadioScreen() if self.playing == "radio" else PlayingScreen())
         elif kind == "radio":
-            rows = [{"label": name, "index": i, "value": self.radio_info.get(cid, {}).get("now", ("", ""))[0]}
-                    for i, (cid, name) in enumerate(self.channels)]
-            self.push(ListScreen("Radio", rows, lambda app, r: (app.play_radio(r["index"]), app.push(RadioScreen())),
-                                 verb="spela"))
+            # Straight to the first channel (P1); up and down change channel from there.
+            if self.playing != "radio" or self.mpv.props.get("idle-active"):
+                self.play_radio(0)
+            self.push(RadioScreen())
         elif kind == "jellyfin":
             self.open_jellyfin()
         elif kind == "cd":
