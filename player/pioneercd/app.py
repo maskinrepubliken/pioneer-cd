@@ -117,8 +117,8 @@ class ListScreen:
                 "selected": self.sel, "legend": legend}
 
     def key(self, app, ev):
-        if ev in ("up", "down") and self.rows:
-            self.sel = max(0, min(len(self.rows) - 1, self.sel + (1 if ev == "down" else -1)))
+        if ev in ("up", "down") and self.rows:     # round: up from the top is the last row
+            self.sel = (self.sel + (1 if ev == "down" else -1)) % len(self.rows)
         elif ev in ("up_fast", "down_fast") and self.rows:
             self.sel = self.jump(1 if ev == "down_fast" else -1)
         elif ev in ("center", "right") and self.rows and self.pick:
@@ -287,7 +287,7 @@ class OptionsScreen:
     def key(self, app, ev):
         rows = self.rows(app)
         if ev in ("up", "down"):
-            self.sel = max(0, min(len(rows) - 1, self.sel + (1 if ev == "down" else -1)))
+            self.sel = (self.sel + (1 if ev == "down" else -1)) % len(rows)
         elif ev in ("center", "right"):
             what = rows[self.sel][0]
             if what == "shuffle":
