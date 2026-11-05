@@ -23,7 +23,7 @@ user = ""
 # The radio's channels, in order: Sveriges Radio's by id
 # (api.sr.se/api/v2/channels), other stations by their stream's address.
 # Without this list: P1, P2, P3, P4 Sjuhärad, Radioapans knattekanal,
-# Lugna Favoriter and Bandit Rock (pioneercd/radio.py).
+# Lugna Favoriter, Bandit Rock and Nightride FM (pioneercd/radio.py).
 # [radio]
 # channels = [
 #   { id = 132, name = "P1" },

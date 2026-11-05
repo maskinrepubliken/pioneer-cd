@@ -17,6 +17,7 @@ CHANNELS = [
     {"id": 2755, "name": "Radioapans knattekanal"},
     {"name": "Lugna Favoriter", "url": "https://fm03-ice.stream.khz.se/fm03_mp3"},
     {"name": "Bandit Rock", "url": "https://fm02-ice.stream.khz.se/fm02_mp3"},
+    {"name": "Nightride FM", "url": "https://stream.nightride.fm/nightride.mp3"},
 ]
 
 
