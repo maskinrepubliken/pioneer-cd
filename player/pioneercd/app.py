@@ -328,7 +328,7 @@ class App:
             result = fetch()
         except Exception as e:  # network, HTTP or JSON: all mean the same to the listener
             print("jellyfin:", repr(e), flush=True)
-            self.push(MessageScreen(status, "Fel: servern svarar inte", "Biblioteket gick inte att nå.", error=True,
+            self.push(MessageScreen(status, "Fel: servern svarar inte", "Jellyfin gick inte att nå.", error=True,
                                     retry=lambda app: app.load(status, fetch, then)))
             return
         then(result)

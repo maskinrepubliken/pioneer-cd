@@ -51,16 +51,18 @@ def font(name, size):
 
 
 SANS = lambda: font("Sans-Regular", 10)
-ROW = lambda: font("Sans-Regular", 14)          # a menu row
-ROW_BOLD = lambda: font("Sans-SemiBold", 14)
-ROW_VALUE = lambda: font("Mono-Regular", 9)
+ROW = lambda: font("Sans-Regular", 17)          # a menu row
+ROW_BOLD = lambda: font("Sans-SemiBold", 17)
+ROW_VALUE = lambda: font("Mono-Regular", 10)
 TITLE = lambda: font("Sans-SemiBold", 13)
 BIG = lambda: font("Sans-SemiBold", 16)
-SUB = lambda: font("Sans-Regular", 10)
+HUGE = lambda: font("Sans-SemiBold", 20)        # what plays, and a message
+SUB = lambda: font("Sans-Regular", 13)
+TIMES = lambda: font("Mono-Regular", 10)
 MONO = lambda: font("Mono-Regular", 8)
 MONO_BOLD = lambda: font("Mono-SemiBold", 8)
 
-LEGEND_H, ROW_H, VISIBLE = 13, 21, 3
+LEGEND_H, ROW_H, VISIBLE = 13, 21, 3     # three rows fill all above the legend
 BOTTOM = HEIGHT - 1 - LEGEND_H        # where the legend starts
 
 
@@ -109,72 +111,73 @@ def draw_list(d, v):
     rows, sel = v["rows"], v.get("selected", 0)
     first = min(max(0, sel - 1), max(0, len(rows) - VISIBLE))
     y = (BOTTOM - VISIBLE * ROW_H) // 2 + 1
-    right = WIDTH - 9 if len(rows) > VISIBLE else WIDTH - 5
+    right = WIDTH - 6 if len(rows) > VISIBLE else WIDTH - 2
     for i in range(first, min(len(rows), first + VISIBLE)):
         num, label, value = rows[i]
         on = i == sel
+        mid = y + ROW_H // 2
         if on:
-            d.rounded_rectangle([3, y, right, y + ROW_H - 1], radius=ROW_H // 2, fill=OCHRE)
-        x = 10
+            d.rounded_rectangle([1, y, right, y + ROW_H - 1], radius=3, fill=OCHRE)
+        x = 6
         fg = ON_OCHRE if on else INK
         if num is not None:
-            d.text((x, y + 6), str(num), font=ROW_VALUE(), fill=fg if on else INK_FAINT)
-            x += 15
-        value = fit(d, value or "", ROW_VALUE(), 70)
+            d.text((x, mid), str(num), font=ROW_VALUE(), fill=fg if on else INK_FAINT, anchor="lm")
+            x += 17
+        value = fit(d, value or "", ROW_VALUE(), 64)
         vw = d.textlength(value, font=ROW_VALUE())
-        d.text((right - 7 - vw, y + 6), value, font=ROW_VALUE(), fill=fg if on else INK_FAINT)
+        d.text((right - 5, mid), value, font=ROW_VALUE(), fill=fg if on else INK_FAINT, anchor="rm")
         f = ROW_BOLD() if on else ROW()
-        d.text((x, y + 1), fit(d, label, f, right - 12 - x - vw), font=f, fill=fg)
+        d.text((x, mid), fit(d, label, f, right - 9 - x - vw), font=f, fill=fg, anchor="lm")
         y += ROW_H
     if len(rows) > VISIBLE:
         # Where in the list: a thin bar in the right edge, its thumb as long as what shows.
-        top, bottom = 4, BOTTOM - 4
-        d.rounded_rectangle([WIDTH - 5, top, WIDTH - 4, bottom], radius=1, fill=PAPER_SUNKEN)
+        top, bottom = 2, BOTTOM - 2
+        d.rectangle([WIDTH - 4, top, WIDTH - 3, bottom], fill=PAPER_SUNKEN)
         h = max(4, round((bottom - top) * VISIBLE / len(rows)))
         t = top + round((bottom - top - h) * first / (len(rows) - VISIBLE))
-        d.rounded_rectangle([WIDTH - 5, t, WIDTH - 4, t + h], radius=1, fill=INK_FAINT)
+        d.rectangle([WIDTH - 4, t, WIDTH - 3, t + h], fill=INK_FAINT)
     if not rows:
-        d.text((10, 8), v.get("empty", "Tomt"), font=SANS(), fill=INK_MUTED)
+        d.text((6, BOTTOM // 2), v.get("empty", "Tomt"), font=ROW(), fill=INK_MUTED, anchor="lm")
 
 
 def draw_message(d, v):
-    mid = BOTTOM // 2
     title, text = v.get("title", ""), v.get("text", "")
     color = ALARM if v.get("error") else INK
-    f = BIG() if d.textlength(title, font=BIG()) <= WIDTH - 16 else TITLE()   # a long title steps down
+    # A long title steps down until it fits.
+    f = next((f for f in (HUGE(), BIG(), TITLE()) if d.textlength(title, font=f) <= WIDTH - 10), TITLE())
     if text:
-        d.text((8, mid - 17), fit(d, title, f, WIDTH - 16), font=f, fill=color)
-        d.text((8, mid + 3), fit(d, text, SUB(), WIDTH - 16), font=SUB(), fill=INK_MUTED)
+        d.text((5, 4), fit(d, title, f, WIDTH - 10), font=f, fill=color)
+        d.text((5, 32), fit(d, text, SUB(), WIDTH - 10), font=SUB(), fill=INK_MUTED)
     else:
-        d.text((8, mid - 10), fit(d, title, f, WIDTH - 16), font=f, fill=color)
+        d.text((5, BOTTOM // 2), fit(d, title, f, WIDTH - 10), font=f, fill=color, anchor="lm")
 
 
 def draw_playing(d, v):
-    x = 7
-    d.text((x, 3), fit(d, v.get("title", ""), BIG(), WIDTH - 2 * x), font=BIG(), fill=INK)
-    d.text((x, 23), fit(d, v.get("subtitle", ""), SUB(), WIDTH - 2 * x), font=SUB(), fill=INK_MUTED)
-    y = 42
+    x = 5
+    d.text((x, 1), fit(d, v.get("title", ""), HUGE(), WIDTH - 2 * x), font=HUGE(), fill=INK)
+    d.text((x, 26), fit(d, v.get("subtitle", ""), SUB(), WIDTH - 2 * x), font=SUB(), fill=INK_MUTED)
+    y = 47
     if v.get("progress") is not None:
-        d.rounded_rectangle([x, y, WIDTH - x, y + 2], radius=1, fill=PAPER_SUNKEN)
+        d.rectangle([x, y, WIDTH - x, y + 2], fill=PAPER_SUNKEN)
         end = x + round((WIDTH - 2 * x) * max(0.0, min(1.0, v["progress"])))
         if end > x:
-            d.rounded_rectangle([x, y, end, y + 2], radius=1, fill=INK)
-    y += 6
+            d.rectangle([x, y, end, y + 2], fill=INK)
+    y += 5
     if v.get("times"):
         left, right = v["times"]
-        d.text((x, y), left, font=MONO(), fill=INK_FAINT)
-        d.text((WIDTH - x - d.textlength(right, font=MONO()), y), right, font=MONO(), fill=INK_FAINT)
+        d.text((x, y), left, font=TIMES(), fill=INK_FAINT)
+        d.text((WIDTH - x - d.textlength(right, font=TIMES()), y), right, font=TIMES(), fill=INK_FAINT)
     elif v.get("line"):
-        d.text((x, y - 6), fit(d, v["line"], MONO(), WIDTH - 2 * x), font=MONO(), fill=INK_FAINT)
+        d.text((x, y - 7), fit(d, v["line"], TIMES(), WIDTH - 2 * x), font=TIMES(), fill=INK_FAINT)
     if v.get("paused"):
         w = 10 + d.textlength("Pausad", font=MONO_BOLD())
         px = (WIDTH - w) // 2
-        d.rectangle([px, y + 2, px + 1, y + 7], fill=INK)
-        d.rectangle([px + 4, y + 2, px + 5, y + 7], fill=INK)
-        d.text((px + 10, y), "Pausad", font=MONO_BOLD(), fill=INK)
+        d.rectangle([px, y + 2, px + 1, y + 8], fill=INK)
+        d.rectangle([px + 4, y + 2, px + 5, y + 8], fill=INK)
+        d.text((px + 10, y + 1), "Pausad", font=MONO_BOLD(), fill=INK)
     elif v.get("position") and v.get("times"):
         pos = v["position"]
-        d.text(((WIDTH - d.textlength(pos, font=MONO())) / 2, y), pos, font=MONO(), fill=INK_FAINT)
+        d.text(((WIDTH - d.textlength(pos, font=TIMES())) / 2, y), pos, font=TIMES(), fill=INK_FAINT)
 
 
 def draw_volume(d, vol):
