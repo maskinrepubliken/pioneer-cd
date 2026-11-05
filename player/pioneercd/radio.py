@@ -18,6 +18,9 @@ CHANNELS = [
     {"name": "Lugna Favoriter", "url": "https://fm03-ice.stream.khz.se/fm03_mp3"},
     {"name": "Bandit Rock", "url": "https://fm02-ice.stream.khz.se/fm02_mp3"},
     {"name": "Nightride FM", "url": "https://stream.nightride.fm/nightride.mp3"},
+    {"name": "Radio Art Tantra", "url": "https://live.radioart.com/fTantra.mp3"},
+    {"name": "Sensual Lounge", "url": "https://kathy.torontocast.com:3590/;"},
+    {"name": "Yoga Chill", "url": "http://178.32.111.41:8027/stream-128kmp3-YogaChill"},
 ]
 
 
