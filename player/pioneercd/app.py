@@ -381,6 +381,7 @@ class App:
         self.cd_album = None        # the disc's tracks and names, once read
         self.disc_first = True      # the first word from cd.watch() is the disc in at start, not put in
         self.disc_put_in = None     # a disc just put in and read, for tick() to act on
+        self.disc_out = False       # the disc was taken out, for tick() to act on
         self.last_disc = None       # the id of the disc put in last
         self.state = os.path.dirname(settings.path)
         jf = config.get("jellyfin", {})
@@ -718,11 +719,20 @@ class App:
                 else:
                     self.disc_put_in = self.cd_album["discid"]
             threading.Thread(target=run, daemon=True).start()
-        elif self.playing == "cd":
+        else:
+            self.disc_out = True            # for tick(): from the main loop, not this thread
+
+    def disc_taken_out(self):
+        """Stops the disc if it played, and closes the CD screens, whichever was open."""
+        self.disc_out = False
+        if self.playing == "cd":
             self.mpv.stop()
             self.playing = None
-            if any(isinstance(s, (CdScreen, CdPlayingScreen)) for s in self.stack):
-                del self.stack[1:]
+        for i, screen in enumerate(self.stack):
+            if isinstance(screen, (CdScreen, CdPlayingScreen)) or (
+                    isinstance(screen, OptionsScreen) and screen.source == "cd"):
+                del self.stack[max(1, i):]
+                break
 
     def disc_in(self, now):
         """A disc put in plays at once if it is another than the last one; the
@@ -883,6 +893,8 @@ class App:
     def tick(self, now):
         self.now = now
         self.run_timer(now)
+        if self.disc_out:
+            self.disc_taken_out()
         if self.disc_put_in:
             self.disc_in(now)
         if isinstance(self.stack[-1], OptionsScreen) and now - self.last_press > OPTIONS_SECONDS:
